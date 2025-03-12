@@ -83,7 +83,7 @@ void Socket::bind_server_to_socket()
 
 }
 
-void Socket::listen_client()
+void Socket::start_listening_client()
 {
     std::cout << "Server started to listening." << std::endl;
 

@@ -56,7 +56,7 @@ class Socket {
 
         // server member functions
         void bind_server_to_socket();
-        void listen_client();
+        void start_listening_client();
         void wait_and_accept();
         void send_response(std::vector<int> &resp_vector);
         std::vector<int> get_query();
