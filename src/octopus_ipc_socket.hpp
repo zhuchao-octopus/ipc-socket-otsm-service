@@ -1,3 +1,24 @@
+/*
+ * File: octopus_ipc_socket.hpp
+ * Organization: Octopus
+ * Description:
+ *  This header file defines the `Socket` class, which encapsulates the functionalities required to
+ *  manage communication through a Unix Domain Socket (UDS). It includes methods for setting up a
+ *  server to handle incoming client requests, sending responses, and performing arithmetic operations.
+ *  The class also supports client-side socket communication by providing methods for connecting to the
+ *  server, sending queries, and receiving responses.
+ *
+ * Includes:
+ *  - Socket setup and connection management through Unix domain sockets.
+ *  - Query and response handling for arithmetic operations.
+ *  - Server-side socket functions including binding, listening, and accepting client connections.
+ *  - Client-side socket functions including query sending and response receiving.
+ *
+ * Author		: [ak47]
+ * Organization	: [octopus]
+ * Date Time	: [2025/0313/21:00]
+ */
+
 #include <iostream>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -12,51 +33,48 @@
 
 class Socket
 {
-
 private:
-    // socket definitions
-    const char *socket_path;
-    int socket_fd;
+    // Socket definitions
+    const char *socket_path;  // Path of the Unix domain socket
+    int socket_fd;            // Socket file descriptor
 
-    int domain;
-    int type;
-    int protocol;
+    int domain;               // Domain for the socket (AF_UNIX)
+    int type;                 // Type of socket (SOCK_STREAM)
+    int protocol;             // Protocol used (0 for default)
 
-    // server definitions
-    // int socket_server;
-    int max_waiting_requests;
-    sockaddr_un addr;
+    // Server-related definitions
+    int max_waiting_requests; // Maximum number of pending requests
+    sockaddr_un addr;        // Address for the socket
 
-    // query response definitions
-    int operation;
-    int number1;
-    int number2;
-    int result;
-    ssize_t query_bytesRead;
-    ssize_t resp_bytesRead;
+    // Query and response definitions
+    int operation;            // Operation to be performed (e.g., addition, subtraction)
+    int number1;              // First operand for the arithmetic operation
+    int number2;              // Second operand for the arithmetic operation
+    int result;               // Result of the arithmetic operation
+    ssize_t query_bytesRead;  // Bytes read from the query
+    ssize_t resp_bytesRead;   // Bytes read from the response
     
 public:
-    // query response definitions
-    // int client_fd;
-    
-    int query_buffer_size;
-    int resp_buffer_size;
+    // Query and response buffer sizes
+    int query_buffer_size;    // Size of the query buffer
+    int respo_buffer_size;    // Size of the response buffer
 
     // Constructor
     Socket();
 
-    int open_socket();
-    int close_socket();
+    // Socket-related functions
+    int open_socket();  // Open the socket
+    int close_socket(); // Close the socket
 
-    // server member functions
-    void bind_server_to_socket();
-    void start_listening();
-    int wait_and_accept(); 
-    int send_response(int client_fd,std::vector<int> &resp_vector);
-    std::vector<int> get_query(int client_fd);
+    // Server-side functions
+    void bind_server_to_socket();     // Bind the socket to the specified address
+    void start_listening();           // Start listening for incoming client connections
+    int wait_and_accept();            // Wait for a client connection and accept it
+    int send_response(int client_fd, std::vector<int> &resp_vector);  // Send a response to the client
+    std::vector<int> get_query(int client_fd);  // Retrieve the query from the client
 
-    // client member functions
-    int connect_to_socket();
-    void send_query(std::vector<int> &query_vector);
-    std::vector<int> get_response();
+    // Client-side functions
+    int connect_to_socket();               // Connect to the server socket
+    void send_query(std::vector<int> &query_vector);  // Send a query to the server
+    std::vector<int> get_response();       // Retrieve the response from the server
 };

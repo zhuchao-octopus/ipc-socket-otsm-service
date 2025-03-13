@@ -1,5 +1,18 @@
-#include "octopus_ipc_socket.hpp"
 
+/**
+ * @file client.cpp
+ * @brief This file contains the client-side implementation for communicating with a server via a Unix domain socket. 
+ * It handles socket creation, connection, sending a query (arithmetic operation), and receiving the server's response.
+ * 
+ * The client takes arguments specifying the operation (addition, subtraction, multiplication, or division), 
+ * followed by two numbers. It then sends this data to the server and prints the result.
+ * 
+ * Author		: [ak47]
+ * Organization	: [octopus]
+ * Date Time	: [2025/0313/21:00]
+ */
+
+#include "octopus_ipc_socket.hpp"
 
 int main(int argc, char* argv[]) 
 {
@@ -23,7 +36,7 @@ int main(int argc, char* argv[])
     }
     else
     {
-        std::cout << "Client: open a socket [" << socket_client << "] connected to server"  << std::endl;
+        std::cout << "Client: Open a socket [" << socket_client << "] connected to server"  << std::endl;
     }
 
     if (argc != 4) {
