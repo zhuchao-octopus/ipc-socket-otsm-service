@@ -96,20 +96,21 @@ void Socket::start_listening_client()
     }
 }
 
-void Socket::wait_and_accept()
+int Socket::wait_and_accept()
 {
-    client_fd = accept(socket_server, NULL, NULL);
+    int client_fd = accept(socket_server, NULL, NULL);
 
     if (client_fd == -1) {
         std::cerr << "Server: Client connection could not be accepted." << std::endl;
-        close_server_socket();
-        std::exit(-1);
+        ///close_server_socket();
+        ///std::exit(-1);
     }
 
     std::cout << "Server accepted client connection." << std::endl;
+    return client_fd;
 }
 
-std::vector<int> Socket::get_query()
+std::vector<int> Socket::get_query(int client_fd)
 {      
     char buffer[query_buffer_size];
     query_bytesRead = read(client_fd, buffer, sizeof(buffer));
@@ -129,7 +130,7 @@ std::vector<int> Socket::get_query()
     return query_vec;
 }
 
-void Socket::send_response(std::vector<int> &resp_vector)
+void Socket::send_response(int client_fd,std::vector<int> &resp_vector)
 {   
     char resp_buffer[resp_vector.size()];
     for (int i=0; i<resp_vector.size(); i++) {

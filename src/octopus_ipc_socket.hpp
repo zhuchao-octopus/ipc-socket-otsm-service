@@ -41,7 +41,7 @@ class Socket {
     public:
 
         // query response definitions
-        int client_fd;
+        //int client_fd;
         int query_buffer_size;
         int resp_buffer_size;
 
@@ -57,9 +57,9 @@ class Socket {
         // server member functions
         void bind_server_to_socket();
         void start_listening_client();
-        void wait_and_accept();
-        void send_response(std::vector<int> &resp_vector);
-        std::vector<int> get_query();
+        void send_response(int client_fd,std::vector<int> &resp_vector);
+        int wait_and_accept();
+        std::vector<int> get_query(int client_fd);
 
         // client member functions
         void connect_to_server();

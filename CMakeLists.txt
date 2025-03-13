@@ -23,6 +23,6 @@ install(
 )
 
 install(
-    FILES octopus.service
+    FILES octopus_rpc.service
     DESTINATION /etc/systemd/system
 )
