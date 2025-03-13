@@ -7,7 +7,7 @@ void handle_client(int client_fd);
 
     //std::mutex client_mutex;
 Socket server;
-socket_path = "/tmp/octopus/ipc_socket";
+const char* socket_path = "/tmp/octopus/ipc_socket";
 
 void ensure_directory_exists(const char* path) {
     std::string dir = path;
@@ -17,7 +17,6 @@ void ensure_directory_exists(const char* path) {
         std::string parent_dir = dir.substr(0, pos);
         struct stat st;
 
-        // 检查目录是否存在
         if (stat(parent_dir.c_str(), &st) == -1) {
             if (mkdir(parent_dir.c_str(), 0777) == -1) {
                 std::cerr << "Failed to create directory: " << strerror(errno) << std::endl;
@@ -27,7 +26,7 @@ void ensure_directory_exists(const char* path) {
 }
 
 void remove_old_socket() {
-    unlink(socket_path);  // 删除旧的 socket 文件，避免 bind 失败
+    unlink(socket_path); 
 }
 
 int main()
@@ -36,9 +35,11 @@ int main()
 
     ensure_directory_exists(socket_path);
     remove_old_socket();
-    server.open_server_socket();
+    server.open_socket();
     server.bind_server_to_socket();
-    server.start_listening_client();
+    server.start_listening();
+    server.query_buffer_size = 3;
+    server.resp_buffer_size = 1;
 
     std::cout << "Server waiting for client connections..." << std::endl;
 
@@ -47,7 +48,7 @@ int main()
         int client_fd = server.wait_and_accept();
         if (client_fd < 0)
         {
-            std::cerr << "Failed to accept client connection." << std::endl;
+            std::cerr << "Failed to accept client connection" << std::endl;
             continue;
         }
 
@@ -55,13 +56,13 @@ int main()
         client_thread.detach();
     }
 
-    server.close_server_socket();
+    server.close_socket();
     return 0;
 }
 
 void handle_client(int client_fd)
 {
-    std::cout << "Client [" << client_fd << "] connected." << std::endl;
+    std::cout << "Server handle client [" << client_fd << "] connected." << std::endl;
     std::vector<int> query_vector(3);
     std::vector<int> resp_vector(1);
 
@@ -70,7 +71,7 @@ void handle_client(int client_fd)
         query_vector = server.get_query(client_fd);
         if (query_vector.empty())
         {
-            std::cout << "Client [" << client_fd << "] disconnected." << std::endl;
+            std::cout << "Server handle client [" << client_fd << "] query is empty exit." << std::endl;
             break;
         }
 
@@ -89,20 +90,23 @@ void handle_client(int client_fd)
         case 4:
             if (query_vector[2] == 0)
             {
-                std::cerr << "Client [" << client_fd << "]: Error - Division by zero!" << std::endl;
-                continue;
+                std::cerr << "Server handle client [" << client_fd << "]: Error - Division by zero!" << std::endl;
+				calc_result = 0;
             }
+			else
+			{
             calc_result = query_vector[1] / query_vector[2];
+			}
             break;
         default:
-            std::cerr << "Client [" << client_fd << "]: Invalid operation." << std::endl;
+            std::cerr << "Server handle client [" << client_fd << "]: Invalid operation." << std::endl;
             continue;
         }
 
         resp_vector[0] = calc_result;
         server.send_response(client_fd,resp_vector);
+        //break;
     }
-
-    close(client_fd);
-    std::cout << "Client [" << client_fd << "] connection closed." << std::endl;
+   
+    std::cout << "Server handle client [" << client_fd << "] finished." << std::endl;
 }

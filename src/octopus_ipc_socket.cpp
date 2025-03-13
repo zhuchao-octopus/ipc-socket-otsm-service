@@ -1,14 +1,13 @@
 #include "octopus_ipc_socket.hpp"
 
-
 static void signal_handler(int signum)
 {
     std::cout << " !! Received signal: " << signum << std::endl;
-    std::exit(-1);
+    /// std::exit(-1);
 }
 
 // Constructor
-Socket::Socket() 
+Socket::Socket()
 {
     // create domain socket
     socket_path = "/tmp/octopus/ipc_socket";
@@ -28,150 +27,154 @@ Socket::Socket()
 
     // server parameters
     int max_waiting_requests = 5;
+}
 
-} 
-
-void Socket::open_server_socket() 
+int Socket::open_socket()
 {
-    socket_server = socket(domain, type, protocol);
+    socket_fd = socket(domain, type, protocol);
 
-    if (socket_server == -1) {
-        std::cerr << "Server socket could not be created." << std::endl;
-        close_server_socket();
-        std::exit(-1);
+    if (socket_fd == -1)
+    {
+        std::cerr << "socket could not be created." << std::endl;
+        close_socket();
+        /// std::exit(-1);
     }
+
+    return socket_fd;
 }
 
-void Socket::open_client_socket() 
+int Socket::close_socket()
 {
-    socket_client = socket(domain, type, protocol);
-
-    if (socket_client == -1) {
-        std::cerr << "Client socket could not be created." << std::endl;
-        close_client_socket();
-        std::exit(-1);
-    }
-}
-
-void Socket::close_server_socket() 
-{
-    close(socket_server);
-}
-
-void Socket::close_client_socket() 
-{
-    close(socket_client);
+    close(socket_fd);
+    if (socket_fd >= 0)
+        std::cout << "close socket [" << socket_fd << "]" << std::endl;
+    return socket_fd;
 }
 
 void Socket::bind_server_to_socket()
 {
-    if (bind(socket_server, (sockaddr*)&addr, sizeof(addr)) == -1) {
-        std::cerr << "Socket could not be bound to socket." << std::endl;
-        close_server_socket();
-        std::exit(-1);
+    if (bind(socket_fd, (sockaddr *)&addr, sizeof(addr)) == -1)
+    {
+        std::cerr << "Server Socket could not be bound to socket." << std::endl;
+        close_socket();
+        /// std::exit(-1);
     }
 
-    std::cout << "Server socket opened with " << addr.sun_family << " domain." << std::endl;
-    std::cout << "Server socket opened with " << addr.sun_path << " path." << std::endl;
+    std::cout << "Server socket opened with [" << socket_fd << "] " << addr.sun_family << " domain" << std::endl;
+    std::cout << "Server socket opened with [" << socket_fd << "] " << addr.sun_path << " path" << std::endl;
 
     int permission = chmod(socket_path, S_IRWXU | S_IRWXG | S_IRWXO);
-    if (permission == -1) {
-        std::cerr << "Socket file path could not give chmod permission to client." << std::endl;
-        close_server_socket();
-        std::exit(-1);
+    if (permission == -1)
+    {
+        std::cerr << "Server Socket file path could not give chmod permission to client." << std::endl;
+        close_socket();
+        /// std::exit(-1);
     }
-
 }
 
-void Socket::start_listening_client()
+void Socket::start_listening()
 {
     std::cout << "Server started to listening." << std::endl;
 
-    int listen_result = listen(socket_server, max_waiting_requests);
+    int listen_result = listen(socket_fd, max_waiting_requests);
 
-    if (listen_result == -1) {
+    if (listen_result == -1)
+    {
         std::cerr << "Server Listen failed." << std::endl;
-        close_server_socket();
-        std::exit(-1);
+        close_socket();
+        /// std::exit(-1);
     }
 }
 
 int Socket::wait_and_accept()
 {
-    int client_fd = accept(socket_server, NULL, NULL);
+    int client_fd = accept(socket_fd, NULL, NULL);
 
-    if (client_fd == -1) {
+    if (client_fd == -1)
+    {
         std::cerr << "Server: Client connection could not be accepted." << std::endl;
-        ///close_server_socket();
-        ///std::exit(-1);
+        /// close_server_socket();
+        /// std::exit(-1);
     }
 
-    std::cout << "Server accepted client connection." << std::endl;
+    std::cout << "Server accepted client connection [" << client_fd << "]" << std::endl;
     return client_fd;
 }
 
 std::vector<int> Socket::get_query(int client_fd)
-{      
+{
     char buffer[query_buffer_size];
     query_bytesRead = read(client_fd, buffer, sizeof(buffer));
 
-    if (query_bytesRead == -1) {
-        std::cerr << "Server: Error reading from socket. bytesRead failed." << std::endl;
-        close_server_socket();
-        std::exit(-1);
+    if (query_bytesRead <= 0)
+    {
+        /// std::cout << "Server Error reading from socket. bytesRead = " << query_bytesRead << " failed." << std::endl;
+        ///  close_socket();
+        ///  std::exit(-1);
+        return {};
     }
 
     std::vector<int> query_vec(query_buffer_size);
-    for (int i=0; i<query_buffer_size; i++) {
+    for (int i = 0; i < query_buffer_size; i++)
+    {
         query_vec[i] = buffer[i];
-        std::cout << "Server: Received query[" << i << "]: " << static_cast<int>(buffer[i]) << std::endl;
+        /// std::cout << "Server: Received query[" << i << "]: " << static_cast<int>(buffer[i]) << std::endl;
     }
 
     return query_vec;
 }
 
-void Socket::send_response(int client_fd,std::vector<int> &resp_vector)
-{   
+int Socket::send_response(int client_fd, std::vector<int> &resp_vector)
+{
     char resp_buffer[resp_vector.size()];
-    for (int i=0; i<resp_vector.size(); i++) {
+    for (int i = 0; i < resp_vector.size(); i++)
+    {
         resp_buffer[i] = resp_vector[i];
     }
     auto write_result = write(client_fd, resp_buffer, sizeof(resp_buffer));
 
-    if (write_result == -1) {
-        std::cerr << "Server: Could not write response to client." << std::endl;
-        close_server_socket();
-        std::exit(-1);
+    if (write_result == -1)
+    {
+        std::cerr << "Server Could not write response to client." << std::endl;
+        close_socket();
+        /// std::exit(-1);
     }
 
-    for (int i=0; i<resp_vector.size(); i++) {
-        std::cout << "Server: Sent response[" << i << "]: " << static_cast<int>(resp_buffer[i]) << std::endl;
-    }
+    /// for (int i = 0; i < resp_vector.size(); i++)
+    ///{
+    ///     std::cout << "Server Sent response[" << i << "]: " << static_cast<int>(resp_buffer[i]) << std::endl;
+    /// }
+
+    return 0;
 }
 
-void Socket::connect_to_server()
+int Socket::connect_to_socket()
 {
-    if (connect(socket_client, (struct sockaddr*) &addr, sizeof(struct sockaddr_un)) == -1) 
-    {   
-        std::cerr << "Client could not connect to server socket." << std::endl;
-        std::exit(-1);
+    if (connect(socket_fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_un)) == -1)
+    {
+        std::cerr << "Client: could not connect to server socket [" << socket_fd << "]" << std::endl;
+        /// std::exit(-1);
+        return -1;
     }
 
-    std::cout << "Client connected to server. \n" << std::endl;
+    ///std::cout << "Client: connected to server " << std::endl;
+    return socket_fd;
 }
 
 void Socket::send_query(std::vector<int> &query_vector)
-{   
+{
     char query_buffer[query_vector.size()];
-    for (int i=0; i<query_vector.size(); i++) {
+    for (int i = 0; i < query_vector.size(); i++)
+    {
         query_buffer[i] = query_vector[i];
     }
-    auto write_result = write(socket_client, query_buffer, sizeof(query_buffer));
+    auto write_result = write(socket_fd, query_buffer, sizeof(query_buffer));
 
-    if (write_result == -1) {
+    if (write_result == -1)
+    {
         std::cerr << "Client: Could not write queryto socket." << std::endl;
-        close_client_socket();
-        std::exit(-1);
+        close_socket();
+        /// std::exit(-1);
     }
 }
 
@@ -180,16 +183,18 @@ std::vector<int> Socket::get_response()
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     char result_buffer[resp_buffer_size];
 
-    resp_bytesRead = read(socket_client, &result_buffer, sizeof(result_buffer));
+    resp_bytesRead = read(socket_fd, &result_buffer, sizeof(result_buffer));
 
-    if (resp_bytesRead == -1) {
+    if (resp_bytesRead == -1)
+    {
         std::cerr << "Client: Could not read response from server." << std::endl;
-        close_client_socket();
-        std::exit(-1);
+        close_socket();
+        /// std::exit(-1);
     }
 
     std::vector<int> result_vec(resp_buffer_size);
-    for (int i=0; i<resp_buffer_size; i++) {
+    for (int i = 0; i < resp_buffer_size; i++)
+    {
         result_vec[i] = result_buffer[i];
     }
 
