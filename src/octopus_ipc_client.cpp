@@ -14,6 +14,13 @@
 
 #include "octopus_ipc_socket.hpp"
 
+
+// Signal handler for clean-up on interrupt (e.g., Ctrl+C)
+void signal_handler(int signum) {
+    std::cout << "Client: Interrupt signal received. Cleaning up...\n";
+    exit(signum);
+}
+
 int main(int argc, char* argv[]) 
 {
     int socket_client;
@@ -24,6 +31,9 @@ int main(int argc, char* argv[])
 
     std::vector<int> query_vector;
     std::vector<int> response_vector;
+
+    // Set up signal handler for SIGINT (Ctrl+C)
+    signal(SIGINT, signal_handler);
 
     socket_client=client.open_socket();
     socket_client=client.connect_to_socket();
@@ -82,9 +92,12 @@ int main(int argc, char* argv[])
     query_vector = {operation, number1, number2};
     client.send_query(query_vector);
 
-    response_vector = client.get_response();
-    std::cout << "Client: Received response: " << response_vector[0] << std::endl;
-
+    while (true)
+    {
+        response_vector = client.get_response();
+        std::cout << "Client: Received response: " << response_vector[0] << std::endl;
+    }
+    
     client.close_socket();
 
     return 0;

@@ -32,7 +32,7 @@
 // Signal handler for server shutdown on interruption signals
 static void signal_handler(int signum)
 {
-    std::cout << " !! Received signal: " << signum << std::endl;
+    std::cout << "Octopus IPC Socket Received Signal: " << signum << std::endl;
     std::exit(-1);
 }
 

@@ -75,7 +75,7 @@ void remove_old_socket() {
 
 // Signal handler for clean-up on interrupt (e.g., Ctrl+C)
 void signal_handler(int signum) {
-    std::cout << "Interrupt signal received. Cleaning up...\n";
+    std::cout << "Server Interrupt signal received. Cleaning up...\n";
     server.close_socket();
     exit(signum);
 }
@@ -151,7 +151,7 @@ void handle_client(int client_fd) {
 
         // If the query is empty, break the loop and end the communication
         if (query_vector.empty()) {
-            std::cout << "Server handling client [" << client_fd << "] query is empty, exiting." << std::endl;
+            std::cout << "Server handling client [" << client_fd << "] empty,existing." << std::endl;
             break;
         }
 
@@ -191,7 +191,7 @@ void handle_client(int client_fd) {
             server.send_response(client_fd, resp_vector);
         }
 
-        std::cout << "Server handling client [" << client_fd << "] finished." << std::endl;
+        std::cout << "Server handling client [" << client_fd << "] done." << std::endl;
     }
 
     // Close the client connection
