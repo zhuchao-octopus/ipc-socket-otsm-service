@@ -19,6 +19,7 @@ add_executable(octopus_ipc_client ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_client
 # 将 octopus_ipc_server 和 octopus_ipc_client 与 OIPC 库链接
 target_link_libraries(octopus_ipc_server PRIVATE OIPC OHAL pthread)
 target_link_libraries(octopus_ipc_client PRIVATE OIPC OHAL pthread)
+target_link_libraries(octopus_ipc_server PRIVATE dl)
 
 # 让其他模块可以使用 OIPC 头文件
 target_include_directories(OIPC PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

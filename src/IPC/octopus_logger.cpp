@@ -31,4 +31,17 @@ public:
                   << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "] "
                   << message << std::endl;
     }
+    static void log(const std::string& message) {
+        // Get the current time
+        auto now = std::chrono::system_clock::now();
+        auto in_time_t = std::chrono::system_clock::to_time_t(now);
+
+        std::tm buf;
+        localtime_r(&in_time_t, &buf);  // Get local time
+
+        // Output the log with the format: [TAG] [timestamp] message
+        std::cout << "[OINFOR] "
+                  << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "] "
+                  << message << std::endl;
+    }
 };
