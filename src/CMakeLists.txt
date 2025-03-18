@@ -4,7 +4,7 @@ add_subdirectory(OTSM)
 add_subdirectory(IPC)
 
 # 生成主程序
-add_executable(octopus-main main.cpp)
+add_executable(octopus main.c)
 
 # 连接库
-target_link_libraries(octopus-main PRIVATE OHAL OIPC pthread)
+target_link_libraries(octopus PRIVATE OHAL OTSM pthread)
