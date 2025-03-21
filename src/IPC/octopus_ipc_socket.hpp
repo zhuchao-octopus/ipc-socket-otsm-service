@@ -18,6 +18,7 @@
  * Organization	: [octopus]
  * Date Time	: [2025/0313/21:00]
  */
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #include <iostream>
 #include <sys/socket.h>
@@ -30,6 +31,10 @@
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
+#include <iomanip>
+
+#include "octopus_ipc_cmd.hpp"
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class Socket
 {
@@ -71,10 +76,15 @@ public:
     void start_listening();           // Start listening for incoming client connections
     int wait_and_accept();            // Wait for a client connection and accept it
     int send_response(int client_fd, std::vector<int> &resp_vector);  // Send a response to the client
+    int send_buff(int client_fd, char *resp_buffer,int length);
     std::vector<int> get_query(int client_fd);  // Retrieve the query from the client
 
     // Client-side functions
     int connect_to_socket();               // Connect to the server socket
     void send_query(std::vector<int> &query_vector);  // Send a query to the server
-    std::vector<int> get_response();       // Retrieve the response from the server
+    std::pair<std::vector<int>, int> get_response();       // Retrieve the response from the server
+
+    void printf_vector_bytes(const std::vector<int> &vec, int length);
+    void printf_buffer_bytes(const std::vector<int> &vec, int length);
+    void printf_buffer_bytes(const void *buffer, int length);
 };

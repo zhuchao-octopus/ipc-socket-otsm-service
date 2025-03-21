@@ -38,7 +38,7 @@ install(TARGETS octopus_ipc_server octopus_ipc_client
 
 # 安装服务文件
 install(
-    FILES ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_service.service
+    FILES ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_server.service
     DESTINATION /etc/systemd/system
 )
 

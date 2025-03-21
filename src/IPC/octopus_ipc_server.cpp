@@ -26,23 +26,43 @@
  * Organization	: [octopus]
  * Date Time	: [2025/0313/21:00]
  */
-////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 #include <mutex>
 #include <atomic>
 #include <unordered_set>
 #include <dlfcn.h> // 动态库操作头文件
 #include "octopus_ipc_socket.hpp"
+#include "../OTSM/octopus_carinfor.h"
+#include "../OTSM/octopus_ipc_socket.h"
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 
-/// #include "../OTSM/octopus.h"
+typedef void (*TaskManagerStateRegistCallbackFunc)(CarInforCallback_t callback);
+typedef void (*TaskManagerStateStopRunningFunc)();
+typedef int (*TaskManagerStateDoCommandFunc)(uint8_t *, uint8_t);
 
-typedef void (*TaskManagerStateStopRunningFunc)(); 
 TaskManagerStateStopRunningFunc taskManagerStateStopRunning = NULL;
-////////////////////////////////////////////////////////////////////////////////////////////////////
-// Function to handle client communication
-void handle_client(int client_fd);
-int handle_calculation(int client_fd, const std::vector<int> &query_vector);
+TaskManagerStateDoCommandFunc taskManagerStateDoCommand = NULL;
+TaskManagerStateRegistCallbackFunc taskManagerStateRegistCallbackFunc = NULL;
 
+typedef carinfo_meter_t *(*otsm_get_meter_info)();
+typedef carinfo_indicator_t *(*otsm_get_indicator_info)();
+typedef carinfo_drivinfo_t *(*otsm_get_drivinfo_info)();
+
+otsm_get_meter_info get_meter_info = NULL;
+otsm_get_indicator_info get_indicator_info = NULL;
+otsm_get_drivinfo_info get_drivinfo_info = NULL;
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+// Function to handle client communication
+void CarInforNotify_Callback(int cmd);
+void Notify_CarInfor_To_Client(int client_fd, int cmd);
+void handle_client(int client_fd);
+
+int handle_calculation(int client_fd, const std::vector<int> &query_vector);
+int handle_car_infor(int client_fd, const std::vector<int> &query_vector);
+int handle_help(int client_fd, const std::vector<int> &query_vector);
 // Path for the IPC socket file
+
 const char *socket_path = "/tmp/octopus/ipc_socket";
 
 // Server object to handle socket operations
@@ -57,7 +77,7 @@ std::unordered_set<int> active_clients;
 // Mutex for client operations to ensure thread-safety
 std::mutex clients_mutex;
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to ensure the directory for the socket file exists
 void ensure_directory_exists(const char *path)
 {
@@ -133,9 +153,9 @@ void initialize_otsm()
         std::cerr << "Server Failed to load otsm library: " << dlerror() << std::endl;
         return;
     }
-    ///std::cout << "Server sucecess to load otsm library: " << dlerror() << std::endl;
-    /// 你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
-    /// 例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
+    /// std::cout << "Server sucecess to load otsm library: " << dlerror() << std::endl;
+    ///  你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
+    ///  例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
 
     taskManagerStateStopRunning = (TaskManagerStateStopRunningFunc)dlsym(handle, "TaskManagerStateStopRunning");
 
@@ -146,18 +166,64 @@ void initialize_otsm()
         return;
     }
 
+    taskManagerStateDoCommand = (TaskManagerStateDoCommandFunc)dlsym(handle, "ipc_socket_doCommand");
+    if (!taskManagerStateDoCommand)
+    {
+        std::cerr << "Server Failed to find taskManagerStateDoCommand: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    taskManagerStateRegistCallbackFunc = (TaskManagerStateRegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
+    if (!taskManagerStateRegistCallbackFunc)
+    {
+        std::cerr << "Server Failed to find taskManagerStateRegistCallbackFunc: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
+    if (!get_meter_info)
+    {
+        std::cerr << "Server Failed to find get_meter_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+    get_indicator_info = (carinfo_indicator_t * (*)()) dlsym(handle, "app_carinfo_get_indicator_info");
+    if (!get_indicator_info)
+    {
+        std::cerr << "Server Failed to find get_indicator_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
+    if (!get_drivinfo_info)
+    {
+        std::cerr << "Server Failed to find get_drivinfo_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    taskManagerStateRegistCallbackFunc(CarInforNotify_Callback);
     /// 调用库中的初始化函数
     /// initialize_func();
+}
 
-    /// 关闭共享库
-    /// dlclose(handle);
+void CarInforNotify_Callback(int cmd)
+{
+    for (int client_id : active_clients) // 遍历所有活跃客户端 ID
+    {
+        Notify_CarInfor_To_Client(client_id, cmd);
+    }
 }
 
 int main()
 {
-    initialize_server();
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     initialize_otsm();
+    initialize_server();
+
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     // Main loop to accept and handle client connections
     while (true)
@@ -188,6 +254,7 @@ int main()
     server.close_socket();
     if (taskManagerStateStopRunning)
         taskManagerStateStopRunning();
+
     return 0;
 }
 
@@ -198,7 +265,7 @@ void handle_client(int client_fd)
 
     // Buffers to hold query and response data
     std::vector<int> query_vector(3);
-
+    int handle_result = 0;
     // Loop to continuously process client queries
     while (true)
     {
@@ -216,7 +283,23 @@ void handle_client(int client_fd)
         }
 
         // Perform the requested operation based on the query
-        int handle_result = handle_calculation(client_fd, query_vector);
+        switch (query_vector[0])
+        {
+        case 0:
+            handle_result = handle_help(client_fd, query_vector);
+            break;
+        case 1:
+        case 2:
+        case 3:
+        case 4:
+            handle_result = handle_calculation(client_fd, query_vector);
+            break;
+
+        case 11:
+            handle_result = handle_car_infor(client_fd, query_vector);
+        default:
+            break;
+        }
 
         std::cout << "Server handling client [" << client_fd << "] done." << std::endl;
     }
@@ -233,6 +316,13 @@ void handle_client(int client_fd)
     std::cout << "Server handling client [" << client_fd << "] closed." << std::endl;
 }
 
+int handle_help(int client_fd, const std::vector<int> &query_vector)
+{
+    for (int client_id : active_clients) // 遍历所有活跃客户端 ID
+    {
+        std::cout << "Server connected client [" << client_fd << "] " << std::endl;
+    }
+}
 // Function to handle calculation logic
 int handle_calculation(int client_fd, const std::vector<int> &query_vector)
 {
@@ -253,7 +343,7 @@ int handle_calculation(int client_fd, const std::vector<int> &query_vector)
     case 4:
         if (query_vector[2] == 0)
         {
-            std::cerr << "Error: Division by zero!" << std::endl;
+            std::cerr << "Server Error: Division by zero!" << std::endl;
             calc_result = 0;
         }
         else
@@ -262,7 +352,7 @@ int handle_calculation(int client_fd, const std::vector<int> &query_vector)
         }
         break;
     default:
-        std::cerr << "Invalid operation requested!" << std::endl;
+        std::cerr << "Server Invalid operation requested!" << std::endl;
         break;
     }
     // Set the calculated result in the response vector
@@ -273,4 +363,73 @@ int handle_calculation(int client_fd, const std::vector<int> &query_vector)
         server.send_response(client_fd, resp_vector);
     }
     return calc_result;
+}
+
+int handle_car_infor(int client_fd, const std::vector<int> &query_vector)
+{
+    Notify_CarInfor_To_Client(client_fd, query_vector[1]);
+    return 0;
+}
+
+void Notify_CarInfor_To_Client(int client_fd, int cmd)
+{
+    // std::vector<int> resp_vector(sizeof(indicator));
+    switch (cmd)
+    {
+    case CMD_GET_INDICATOR_INFO:
+    {
+        carinfo_indicator_t *carinfo_indicator = get_indicator_info();
+        if (carinfo_indicator == nullptr)
+        {
+            // LOG_LEVEL("get_indicator_info() returned nullptr");
+            break;
+        }
+        //  Lock the server mutex to safely send the response to the client
+        std::cout << "Server handling client [" << client_fd << "] handle_car_infor " << sizeof(carinfo_indicator_t) << " bytes:";
+        server.printf_buffer_bytes(carinfo_indicator, sizeof(carinfo_indicator_t));
+
+        {
+            std::lock_guard<std::mutex> lock(server_mutex);
+            server.send_buff(client_fd, reinterpret_cast<char *>(carinfo_indicator), sizeof(carinfo_indicator_t));
+        }
+        break;
+    }
+    case CMD_GET_METER_INFO:
+    {
+        carinfo_meter_t *carinfo_meter = get_meter_info();
+        if (carinfo_meter == nullptr)
+        {
+            // LOG_LEVEL("get_indicator_info() returned nullptr");
+            break;
+        }
+        //  Lock the server mutex to safely send the response to the client
+        std::cout << "Server handling client [" << client_fd << "] handle_car_infor " << sizeof(carinfo_meter_t) << " bytes:";
+        server.printf_buffer_bytes(carinfo_meter, sizeof(carinfo_meter_t));
+
+        {
+            std::lock_guard<std::mutex> lock(server_mutex);
+            server.send_buff(client_fd, reinterpret_cast<char *>(carinfo_meter), sizeof(carinfo_meter_t));
+        }
+        break;
+    }
+    case CMD_GET_DRIVINFO_INFO:
+    {
+        carinfo_drivinfo_t *carinfo_drivinfo = get_drivinfo_info();
+        if (carinfo_drivinfo == nullptr)
+        {
+            // LOG_LEVEL("get_indicator_info() returned nullptr");
+            break;
+        }
+
+        //  Lock the server mutex to safely send the response to the client
+        std::cout << "Server handling client [" << client_fd << "] handle_car_infor " << sizeof(carinfo_drivinfo_t) << " bytes:";
+        server.printf_buffer_bytes(carinfo_drivinfo, sizeof(carinfo_drivinfo_t));
+
+        {
+            std::lock_guard<std::mutex> lock(server_mutex);
+            server.send_buff(client_fd, reinterpret_cast<char *>(carinfo_drivinfo), sizeof(carinfo_drivinfo_t));
+        }
+        break;
+    }
+    }
 }
