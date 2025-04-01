@@ -10,6 +10,8 @@
 #define CMD_GET_METER_INFO       101
 #define CMD_GET_DRIVINFO_INFO    102
 
+#define CMD_GET_HELP_INFO        103
 ///#define CMD_CUSTOM_ACTION        103
+
 
 #endif // COMMAND_HANDLER_HPP

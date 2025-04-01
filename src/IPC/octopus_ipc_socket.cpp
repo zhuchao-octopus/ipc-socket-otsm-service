@@ -139,7 +139,7 @@ int Socket::wait_and_accept()
 // Read the query from the client
 std::vector<int> Socket::get_query(int client_fd)
 {
-    char buffer[query_buffer_size];                            // Buffer for storing the query
+    char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];                            // Buffer for storing the query
     query_bytesRead = read(client_fd, buffer, sizeof(buffer)); // Read the client query
 
     // Handle read errors
@@ -149,8 +149,8 @@ std::vector<int> Socket::get_query(int client_fd)
     }
 
     // Convert the buffer into a vector of integers
-    std::vector<int> query_vec(query_buffer_size);
-    for (int i = 0; i < query_buffer_size; i++)
+    std::vector<int> query_vec(sizeof(buffer));
+    for (int i = 0; i < sizeof(buffer); i++)
     {
         query_vec[i] = buffer[i];
     }
@@ -235,9 +235,9 @@ std::pair<std::vector<int>, int> Socket::get_response()
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Introduce a short delay
 
-    char result_buffer[respo_buffer_size];                                      // Buffer for the response
+    char result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                                      // Buffer for the response
     int resp_bytesRead = read(socket_fd, result_buffer, sizeof(result_buffer)); // Read the response
-
+    std::cout << "get_response " << resp_bytesRead <<"/"<< sizeof(result_buffer)<< std::endl; // 
     // Handle errors in receiving the response
     if (resp_bytesRead == -1)
     {
@@ -258,13 +258,14 @@ std::pair<std::vector<int>, int> Socket::get_response()
 
 void Socket::printf_vector_bytes(const std::vector<int> &vec, int length)
 {
+    //std::cout << "printf_vector_bytes " << length << std::endl; // 
     // 确保 length 不超过 vector 的大小
     int print_length = std::min(length, static_cast<int>(vec.size()));
 
     for (int i = 0; i < print_length; ++i)
     {
         std::cout << std::hex << std::setw(2) << std::setfill('0')
-                  << (vec[i] & 0xFF) << " "; // 打印每个字节
+                 <<"0x" << (vec[i] & 0xFF) << " "; // 打印每个字节
     }
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }

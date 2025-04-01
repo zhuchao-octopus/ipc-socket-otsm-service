@@ -67,7 +67,7 @@ int main(int argc, char *argv[])
         }
         else
         {
-            key_operation = 0;  // 设置默认值
+            key_operation = 0; // 设置默认值
         }
         if (argc == 3)
         {
@@ -92,7 +92,10 @@ int main(int argc, char *argv[])
 
     // while (true)
     {
-        auto [response, size] = client.get_response();
+        // auto [response, size] = client.get_response();
+        std::pair<std::vector<int>, int> response_pair = client.get_response();
+        std::vector<int> response = response_pair.first;
+        int size = response_pair.second;
         std::cout << "Client: Received response: ";
         client.printf_vector_bytes(response, size);
     }
@@ -104,4 +107,5 @@ exit_loop:
 
 int parser_parameter(int argc, char *argv[])
 {
+    return 0;
 }

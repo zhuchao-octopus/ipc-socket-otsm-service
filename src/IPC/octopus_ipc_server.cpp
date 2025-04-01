@@ -55,7 +55,7 @@ otsm_get_drivinfo_info get_drivinfo_info = NULL;
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to handle client communication
 void CarInforNotify_Callback(int cmd);
-void Notify_CarInfor_To_Client(int client_fd, int cmd);
+void notify_carInfor_to_client(int client_fd, int cmd);
 void handle_client(int client_fd);
 
 int handle_calculation(int client_fd, const std::vector<int> &query_vector);
@@ -137,8 +137,8 @@ void initialize_server()
     server.start_listening();
 
     // Set buffer sizes for query and response
-    server.query_buffer_size = 20;
-    server.respo_buffer_size = 20;
+    // server.query_buffer_size = 20;
+    // server.respo_buffer_size = 20;
 
     std::cout << "Server waiting for client connections..." << std::endl;
 }
@@ -214,7 +214,7 @@ void CarInforNotify_Callback(int cmd)
 {
     for (int client_id : active_clients) // 遍历所有活跃客户端 ID
     {
-        Notify_CarInfor_To_Client(client_id, cmd);
+        notify_carInfor_to_client(client_id, cmd);
     }
 }
 
@@ -278,7 +278,7 @@ void handle_client(int client_fd)
         // If the query is empty, break the loop and end the communication
         if (query_vector.empty())
         {
-            std::cout << "Server handling client [" << client_fd << "] empty,existing." << std::endl;
+            /// std::cout << "Server handling client [" << client_fd << "] empty,existing." << std::endl;
             break;
         }
 
@@ -294,14 +294,14 @@ void handle_client(int client_fd)
         case 4:
             handle_result = handle_calculation(client_fd, query_vector);
             break;
-
         case 11:
             handle_result = handle_car_infor(client_fd, query_vector);
+            break;
         default:
             break;
         }
 
-        std::cout << "Server handling client [" << client_fd << "] done." << std::endl;
+        std::cout << "Server handling client [" << client_fd << "] cmd[" << query_vector[0] << "] done." << std::endl;
     }
 
     // Close the client connection
@@ -318,10 +318,21 @@ void handle_client(int client_fd)
 
 int handle_help(int client_fd, const std::vector<int> &query_vector)
 {
+    std::vector<int> resp_vector(1);
+    /// std::cout << "Server handle_help"<< std::endl;
     for (int client_id : active_clients) // 遍历所有活跃客户端 ID
     {
-        std::cout << "Server connected client [" << client_fd << "] " << std::endl;
+        std::cout << "Server connected clients [" << client_fd << "] ";
     }
+    std::cout << std::endl;
+    // Set the result in the response vector
+    resp_vector[0] = CMD_GET_HELP_INFO;
+    // Lock the server mutex to safely send the response to the client
+    {
+        std::lock_guard<std::mutex> lock(server_mutex);
+        server.send_response(client_fd, resp_vector);
+    }
+    return 0;
 }
 // Function to handle calculation logic
 int handle_calculation(int client_fd, const std::vector<int> &query_vector)
@@ -367,11 +378,11 @@ int handle_calculation(int client_fd, const std::vector<int> &query_vector)
 
 int handle_car_infor(int client_fd, const std::vector<int> &query_vector)
 {
-    Notify_CarInfor_To_Client(client_fd, query_vector[1]);
+    notify_carInfor_to_client(client_fd, query_vector[1]);
     return 0;
 }
 
-void Notify_CarInfor_To_Client(int client_fd, int cmd)
+void notify_carInfor_to_client(int client_fd, int cmd)
 {
     // std::vector<int> resp_vector(sizeof(indicator));
     switch (cmd)
@@ -424,7 +435,6 @@ void Notify_CarInfor_To_Client(int client_fd, int cmd)
         //  Lock the server mutex to safely send the response to the client
         std::cout << "Server handling client [" << client_fd << "] handle_car_infor " << sizeof(carinfo_drivinfo_t) << " bytes:";
         server.printf_buffer_bytes(carinfo_drivinfo, sizeof(carinfo_drivinfo_t));
-
         {
             std::lock_guard<std::mutex> lock(server_mutex);
             server.send_buff(client_fd, reinterpret_cast<char *>(carinfo_drivinfo), sizeof(carinfo_drivinfo_t));

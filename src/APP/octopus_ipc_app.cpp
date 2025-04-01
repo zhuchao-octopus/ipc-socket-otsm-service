@@ -19,7 +19,7 @@
 #include <atomic>
 #include <mutex>
 #include <csignal>
-#include "octopus_ipc_socket.hpp"
+#include "../IPC/octopus_ipc_socket.hpp"
 #include "octopus_ipc_app.hpp"
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -89,7 +89,10 @@ void receive_response_loop()
 {
     while (running)
     {
-        auto [response, size] = client.get_response();
+        //auto [response, size] = client.get_response();
+        std::pair<std::vector<int>, int> response_pair = client.get_response();
+        std::vector<int> response = response_pair.first;
+        int size = response_pair.second;
         if (size > 0)
         {
             std::cout << "App: Received response: ";

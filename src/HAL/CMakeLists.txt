@@ -7,10 +7,6 @@ add_library(OHAL SHARED ${HAL_SOURCES})
 # 设置 HAL 头文件路径
 target_include_directories(OHAL PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# 如果需要线程支持，链接 pthread 库
-find_package(Threads REQUIRED)
-target_link_libraries(OHAL PRIVATE Threads::Threads)
-
 # 设置 HAL 库的安装路径
 install(TARGETS OHAL DESTINATION /usr/local/lib)
 
@@ -18,3 +14,5 @@ install(TARGETS OHAL DESTINATION /usr/local/lib)
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
         DESTINATION /usr/local/include
         FILES_MATCHING PATTERN "*.hpp")
+
+
