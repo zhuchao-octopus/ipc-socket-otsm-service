@@ -49,7 +49,7 @@ void signal_handler(int signum)
  * @brief Registers a callback function to be invoked when a response is received.
  * @param callback Function pointer to the callback.
  */
-void register_callback(ResponseCallback callback)
+void register_ipc_socket_callback(ResponseCallback callback)
 {
     std::lock_guard<std::mutex> lock(callback_mutex);
     g_callback = callback;
@@ -87,16 +87,17 @@ void process_query(int operation, int number1, int number2)
  */
 void receive_response_loop()
 {
+    std::vector<int> query_vector = {11, 101, 0};
+    client.send_query(query_vector);
     while (running)
     {
-        //auto [response, size] = client.get_response();
         std::pair<std::vector<int>, int> response_pair = client.get_response();
         std::vector<int> response = response_pair.first;
         int size = response_pair.second;
+        std::cout << "App: Received response: ";
         if (size > 0)
         {
-            std::cout << "App: Received response: ";
-            client.printf_vector_bytes(response, size);
+            //client.printf_vector_bytes(response, size);
             notify_response(response, size);
         }
     }
@@ -112,8 +113,8 @@ __attribute__((constructor)) void app_main()
     signal(SIGINT, signal_handler);
 
     // Open and connect the socket
-    socket_client = client.open_socket();
-    socket_client = client.connect_to_socket();
+    socket_client = client.open_socket(AF_UNIX, SOCK_STREAM, 0);
+    socket_client = client.connect_to_socket("/tmp/octopus/ipc_socket");
 
     if (socket_client < 0)
     {

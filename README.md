@@ -1,5 +1,8 @@
 
-
+mkdir build
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../toolchain.cmake
+make
 
 sudo systemctl daemon-reload
 sudo systemctl start octopus_ipc_server

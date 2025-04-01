@@ -30,7 +30,7 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_set>
-#include <dlfcn.h> // 动态库操作头文件
+#include <dlfcn.h>
 #include "octopus_ipc_socket.hpp"
 #include "../OTSM/octopus_carinfor.h"
 #include "../OTSM/octopus_ipc_socket.h"
@@ -54,7 +54,7 @@ otsm_get_drivinfo_info get_drivinfo_info = NULL;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to handle client communication
-void CarInforNotify_Callback(int cmd);
+void CarInforNotify_Callback(int cmd_parameter);
 void notify_carInfor_to_client(int client_fd, int cmd);
 void handle_client(int client_fd);
 
@@ -210,12 +210,24 @@ void initialize_otsm()
     /// initialize_func();
 }
 
-void CarInforNotify_Callback(int cmd)
+void CarInforNotify_Callback(int cmd_parameter)
 {
-    for (int client_id : active_clients) // 遍历所有活跃客户端 ID
+    std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
+  
+#if 1
+    ///std::vector<std::thread> threads;  
+    for (int client_id : active_clients) 
     {
-        notify_carInfor_to_client(client_id, cmd);
+        ///std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
+        ///threads.push_back(std::move(notify_thread));  
+        notify_carInfor_to_client(client_id, cmd_parameter);
     }
+
+    ///for (auto& thread : threads)
+    ///{
+    ///    thread.join();  
+    ///}
+#endif
 }
 
 int main()
@@ -261,7 +273,7 @@ int main()
 // Function to handle communication with a specific client
 void handle_client(int client_fd)
 {
-    std::cout << "Server handling client [" << client_fd << "] connected." << std::endl;
+    std::cout << "Server handling client [" << client_fd << "]." << std::endl;
 
     // Buffers to hold query and response data
     std::vector<int> query_vector(3);
@@ -271,7 +283,7 @@ void handle_client(int client_fd)
     {
         // Lock the server mutex to safely fetch the query data
         {
-            std::lock_guard<std::mutex> lock(server_mutex);
+            // std::lock_guard<std::mutex> lock(server_mutex);
             query_vector = server.get_query(client_fd);
         }
 
@@ -298,6 +310,7 @@ void handle_client(int client_fd)
             handle_result = handle_car_infor(client_fd, query_vector);
             break;
         default:
+            handle_result = handle_help(client_fd, query_vector);
             break;
         }
 
@@ -441,5 +454,8 @@ void notify_carInfor_to_client(int client_fd, int cmd)
         }
         break;
     }
+    default:
+    handle_help(client_fd,{0});
+        break;
     }
 }

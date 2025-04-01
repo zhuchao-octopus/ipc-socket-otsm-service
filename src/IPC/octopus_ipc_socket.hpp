@@ -68,9 +68,11 @@ public:
 
     // Constructor
     Socket();
-
+    void init_socket_structor();
+    int set_socket_non_blocking(int socket_fd);
     // Socket-related functions
-    int open_socket();  // Open the socket
+    int open_socket(); // Open the socket
+    int open_socket(int domain, int type, int protocol);
     int close_socket(); // Close the socket
 
     // Server-side functions
@@ -82,7 +84,9 @@ public:
     std::vector<int> get_query(int client_fd); // Retrieve the query from the client
 
     // Client-side functions
-    int connect_to_socket();                         // Connect to the server socket
+    int connect_to_socket(); // Connect to the server socket
+    int connect_to_socket(std::string address);
+
     void send_query(std::vector<int> &query_vector); // Send a query to the server
     std::pair<std::vector<int>, int> get_response(); // Retrieve the response from the server
 

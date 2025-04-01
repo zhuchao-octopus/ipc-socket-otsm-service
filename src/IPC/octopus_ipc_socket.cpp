@@ -28,7 +28,12 @@
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
+#include <fcntl.h>
 
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////
 // Signal handler for server shutdown on interruption signals
 static void signal_handler(int signum)
 {
@@ -39,24 +44,26 @@ static void signal_handler(int signum)
 // Constructor for the Socket class
 Socket::Socket()
 {
+    // Setup signal handling for interrupts
+    signal(SIGINT, signal_handler);
+    signal(SIGKILL, signal_handler);
+    signal(SIGTERM, signal_handler);
+    // Server configuration
+    max_waiting_requests = 10; // Max number of clients waiting to be served
+    init_socket_structor();
+}
+
+void Socket::init_socket_structor()
+{
     // Initialize socket properties
     socket_path = "/tmp/octopus/ipc_socket";
     domain = AF_UNIX;   // Domain type: Unix domain socket
     type = SOCK_STREAM; // Type: Stream socket (TCP-like behavior)
     protocol = 0;       // Protocol: Default
-
-    // Setup signal handling for interrupts
-    signal(SIGINT, signal_handler);
-    signal(SIGKILL, signal_handler);
-    signal(SIGTERM, signal_handler);
-
     // Initialize socket address structure for binding
     memset(&addr, 0, sizeof(struct sockaddr_un));
     addr.sun_family = AF_UNIX;                                      // Set address family to Unix domain
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1); // Set socket path
-
-    // Server configuration
-    max_waiting_requests = 5; // Max number of clients waiting to be served
 }
 
 // Open a socket for communication
@@ -67,7 +74,27 @@ int Socket::open_socket()
     // Error handling if socket creation fails
     if (socket_fd == -1)
     {
-        std::cerr << "socket could not be created." << std::endl;
+        int err = errno;
+        std::cerr << "Socket::open_socket() failed to create socket.\n"
+                  << "Error: " << strerror(err) << " (errno: " << err << ")\n"
+                  << "Domain: " << domain << ", Type: " << type << ", Protocol: " << protocol << std::endl;
+        close_socket(); // Ensure socket is closed if creation fails
+    }
+
+    return socket_fd;
+}
+
+int Socket::open_socket(int domain, int type, int protocol)
+{
+    socket_fd = socket(domain, type, protocol); // Create the socket
+
+    // Error handling if socket creation fails
+    if (socket_fd == -1)
+    {
+        int err = errno;
+        std::cerr << "Socket::open_socket() failed to create socket.\n"
+                  << "Error: " << strerror(err) << " (errno: " << err << ")\n"
+                  << "Domain: " << domain << ", Type: " << type << ", Protocol: " << protocol << std::endl;
         close_socket(); // Ensure socket is closed if creation fails
     }
 
@@ -139,7 +166,7 @@ int Socket::wait_and_accept()
 // Read the query from the client
 std::vector<int> Socket::get_query(int client_fd)
 {
-    char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];                            // Buffer for storing the query
+    char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];                 // Buffer for storing the query
     query_bytesRead = read(client_fd, buffer, sizeof(buffer)); // Read the client query
 
     // Handle read errors
@@ -177,7 +204,6 @@ int Socket::send_response(int client_fd, std::vector<int> &resp_vector)
 
     return 0;
 }
-
 // Send a response to the client
 int Socket::send_buff(int client_fd, char *resp_buffer, int length)
 {
@@ -187,11 +213,10 @@ int Socket::send_buff(int client_fd, char *resp_buffer, int length)
     //     resp_buffer[i] = resp_vector[i];
     // }
     auto write_result = write(client_fd, resp_buffer, length); // Send the response
-
     // Handle errors in sending the response
     if (write_result == -1)
     {
-        std::cerr << "Server Could not write response to client." << std::endl;
+        std::cerr << "Socket Could not write response to client." << std::endl;
         close_socket();
         return -1;
     }
@@ -199,17 +224,66 @@ int Socket::send_buff(int client_fd, char *resp_buffer, int length)
     return 0;
 }
 
+int Socket::set_socket_non_blocking(int socket_fd)
+{
+    int flags = fcntl(socket_fd, F_GETFL, 0);
+    if (flags == -1)
+    {
+        perror("fcntl");
+        return -1;
+    }
+
+    flags |= O_NONBLOCK;
+    if (fcntl(socket_fd, F_SETFL, flags) == -1)
+    {
+        perror("fcntl");
+        return -1;
+    }
+
+    return 0;
+}
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Connect the client to the server
 int Socket::connect_to_socket()
 {
-    // Attempt to connect to the server socket
-    if (connect(socket_fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_un)) == -1)
+    std::cout << "Attempting to connect to server socket at: " << addr.sun_path << std::endl;
+    int result = connect(socket_fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_un));
+    if (result == -1)
     {
-        std::cerr << "Client: could not connect to server socket [" << socket_fd << "]" << std::endl;
-        return -1; // Return -1 on failure
-    }
+        int err = errno;
+        std::cerr << "Socket::connect_to_socket() failed.\n"
+                  << "Error: " << strerror(err) << " (errno: " << err << ")\n"
+                  << "Socket FD: " << socket_fd << "\n"
+                  << "Socket Path: " << addr.sun_path << "\n";
 
+        // 如果是 ECONNREFUSED，可能是服务器未启动
+        if (err == ECONNREFUSED)
+        {
+            std::cerr << "Possible cause: The server socket is not running or has crashed.\n";
+        }
+        // 如果是 ENOENT，可能是 socket 文件不存在
+        else if (err == ENOENT)
+        {
+            std::cerr << "Possible cause: The socket file '" << addr.sun_path << "' does not exist.\n";
+        }
+        // 如果是 EADDRINUSE，可能是 socket 被占用
+        else if (err == EADDRINUSE)
+        {
+            std::cerr << "Possible cause: The socket is already in use.\n";
+        }
+        close(socket_fd); // 关闭 socket
+        return -1;
+    }
+    std::cout << "Successfully connected to server socket." << std::endl;
     return socket_fd;
+}
+
+int Socket::connect_to_socket(std::string address)
+{
+    // 设置 socket_path 为新的 address
+    this->socket_path = address.c_str();
+    init_socket_structor();
+    return this->connect_to_socket();
 }
 
 // Send a query from the client to the server
@@ -235,10 +309,10 @@ std::pair<std::vector<int>, int> Socket::get_response()
 {
     std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Introduce a short delay
 
-    char result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                                      // Buffer for the response
+    char result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                        // Buffer for the response
     int resp_bytesRead = read(socket_fd, result_buffer, sizeof(result_buffer)); // Read the response
-    std::cout << "get_response " << resp_bytesRead <<"/"<< sizeof(result_buffer)<< std::endl; // 
-    // Handle errors in receiving the response
+    // std::cout << "get_response " << resp_bytesRead <<"/"<< sizeof(result_buffer)<< std::endl; //
+    //  Handle errors in receiving the response
     if (resp_bytesRead == -1)
     {
         std::cerr << "Client: Could not read response from server." << std::endl;
@@ -256,16 +330,17 @@ std::pair<std::vector<int>, int> Socket::get_response()
     return {result_vec, resp_bytesRead}; // Return the received data and size
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void Socket::printf_vector_bytes(const std::vector<int> &vec, int length)
 {
-    //std::cout << "printf_vector_bytes " << length << std::endl; // 
-    // 确保 length 不超过 vector 的大小
+    // std::cout << "printf_vector_bytes " << length << std::endl; //
+    //  确保 length 不超过 vector 的大小
     int print_length = std::min(length, static_cast<int>(vec.size()));
 
     for (int i = 0; i < print_length; ++i)
     {
-        std::cout << std::hex << std::setw(2) << std::setfill('0')
-                 <<"0x" << (vec[i] & 0xFF) << " "; // 打印每个字节
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << "0x" << (vec[i] & 0xFF) << " "; // 打印每个字节
     }
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }

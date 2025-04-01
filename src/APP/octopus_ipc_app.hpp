@@ -29,7 +29,7 @@ typedef void (*ResponseCallback)(const std::vector<int> &response, int size);
  * @brief Registers a callback function to be called when a response is received.
  * @param callback Function pointer to the callback.
  */
-void register_callback(ResponseCallback callback);
+void register_ipc_socket_callback(ResponseCallback callback);
 
 /**
  * @brief Sends a query request to the server.
