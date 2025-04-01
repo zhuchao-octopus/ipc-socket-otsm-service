@@ -143,7 +143,7 @@ extern "C" {
 #define DELAY_US(us) (usleep(us))                          // Introduce delay in microseconds
 
 #elif defined(PLATFORM_LINUX_RISC)
-#define CFG_OTSM_STACK_SIZE    (200112L)                   // Stack size for Octopus Task Manager
+#define CFG_OTSM_STACK_SIZE    (1024 * 1024)                //(200112L)// Stack size for Octopus Task Manager
 #define DELAY_US(us)  (usleep(us))  // Define empty macro for unsupported platforms
 #define GET_SYSTEM_TICK_COUNT ({ \
     struct timespec ts; \

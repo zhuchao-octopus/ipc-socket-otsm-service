@@ -52,7 +52,7 @@ void TaskManagerStateGoRunning();
  * GLOBAL VARIABLES
  */
 #if defined(PLATFORM_ITE_OPEN_RTOS) || defined(PLATFORM_LINUX_RISC)
-static pthread_t thread_task;      // Thread handle for task manager event loop
+static pthread_t thread_task = 0;  // Thread handle for task manager event loop
 static pthread_attr_t thread_attr; // Thread attributes (for setting stack size, etc.)
 bool stop_thread = false;
 #endif
@@ -126,8 +126,6 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
     system_handshake_with_mcu();
 #endif
     ptl_help();
-    LOG_NONE("##################################BOOT COMPLETE##################################\r\n");
-
 /////////////////////////////////////////////////////////////////////////////////////////////////////
 // Enable task manager state matching main loop
 #ifdef PLATFORM_CST_OSAL_RTOS
@@ -137,11 +135,14 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
 #if defined(PLATFORM_ITE_OPEN_RTOS) || defined(PLATFORM_LINUX_RISC)
     TaskManagerStateGoRunning();
 #endif
+    /////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    LOG_NONE("##################################BOOT COMPLETE##################################\r\n");
 }
 
 __attribute__((destructor)) void ExitCleanup()
 {
-    LOG_LEVEL("so unloaded!\n");
+    LOG_LEVEL("OTSM so unloaded!\n");
 #if defined(PLATFORM_ITE_OPEN_RTOS) || defined(PLATFORM_LINUX_RISC)
     TaskManagerStateStopRunning();
 #endif
@@ -220,8 +221,9 @@ void *TaskManagerStateEventLoop(void *arg)
 {
     uint32_t wait_cnt = 0;
     stop_thread = false;
+
+    /// usleep(MAIN_TASK_TIMER_INTERVAL * 1000);
     LOG_LEVEL("task manager state machine event start running\r\n"); // Log unhandled events
-    // fflush(stdout); // 强制刷新缓冲区，确保日志输出
     StartTickCounter(&wait_cnt);
     while (!stop_thread)
     {
@@ -230,7 +232,7 @@ void *TaskManagerStateEventLoop(void *arg)
 
         if (GetTickCounter(&wait_cnt) >= 1000 * 60)
         {
-            LOG_LEVEL("task manager state machine event running\r\n"); // Log unhandled events
+            LOG_LEVEL("task manager state machine event running %d\r\n", wait_cnt); // Log unhandled events
             RestartTickCounter(&wait_cnt);
         }
     }
@@ -239,10 +241,12 @@ void *TaskManagerStateEventLoop(void *arg)
 
 void TaskManagerStateGoRunning()
 {
-    pthread_attr_init(&thread_attr);                                                         // Initialize thread attributes
-    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);                      // Set thread to detached state
-    pthread_attr_setstacksize(&thread_attr, CFG_OTSM_STACK_SIZE);                            // Set the stack size for the thread
+    // LOG_LEVEL("task manager state machine thread enter\n");
+    pthread_attr_init(&thread_attr);                                                       // Initialize thread attributes
+    pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);                    // Set thread to detached state
+    pthread_attr_setstacksize(&thread_attr, CFG_OTSM_STACK_SIZE);                          // Set the stack size for the thread
     int ret = pthread_create(&thread_task, &thread_attr, TaskManagerStateEventLoop, NULL); // Create the task manager event loop thread
+    pthread_attr_destroy(&thread_attr);
     if (ret != 0)
     {
         LOG_LEVEL("task manager state machine error creating thread: %s\n", strerror(ret));
@@ -250,7 +254,7 @@ void TaskManagerStateGoRunning()
     else
     {
         LOG_LEVEL("task manager state machine thread started: %s\n", strerror(ret));
-        pthread_detach(thread_task); // 让线程自动释放资源
+        // pthread_detach(thread_task); // 让线程自动释放资源
         // pthread_join(thread_task, NULL);  // 等待线程结束
         // LOG_LEVEL("task manager state machine thread finished\n");
     }
@@ -259,9 +263,9 @@ void TaskManagerStateGoRunning()
 void TaskManagerStateStopRunning()
 {
     stop_thread = true; // 设置标志位为 true，通知线程停止
+    LOG_LEVEL("task manager state machine thread stopped!\n");
 }
 
 #else
 
 #endif
-
