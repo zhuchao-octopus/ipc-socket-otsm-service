@@ -43,7 +43,7 @@
  ******************************************************************************/
 static bool ipc_socket_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
 static bool ipc_socket_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
-
+void notify_message_to_ipc_socket(int cmd_parameter);
 /*******************************************************************************
  * Global Variables
  * Define variables accessible across multiple files if needed.
@@ -58,7 +58,7 @@ static mb_state_t lt_mb_state;         // Current state of the message buffer
 static uint8_t l_u8_mpu_status = 0;    // Tracks the status of the MPU
 static uint8_t l_u8_power_off_req = 0; // Tracks if a power-off request is pending
 static uint32_t l_t_msg_wait_10_timer; // Timer for 10 ms message waiting period
-
+static uint32_t l_t_msg_wait_500_timer;
 /*******************************************************************************
  * Global Function Implementations
  ******************************************************************************/
@@ -99,6 +99,7 @@ void app_ipc_socket_start_running(void)
 void app_ipc_socket_assert_running(void)
 {
     StartTickCounter(&l_t_msg_wait_10_timer);
+    StartTickCounter(&l_t_msg_wait_500_timer);
     ptl_reqest_running(A2M_MOD_IPC);
     OTMS(TASK_ID_IPC_SOCKET, OTMS_S_RUNNING);
 }
@@ -116,13 +117,19 @@ void app_ipc_socket_running(void)
 
     Msg_t *msg = get_message(TASK_ID_IPC_SOCKET);
     if (msg->id == NO_MSG)
+    {
+        if (GetTickCounter(&l_t_msg_wait_500_timer) >= 30000)
+        {
+            notify_message_to_ipc_socket(CMD_GET_INDICATOR_INFO);
+            StartTickCounter(&l_t_msg_wait_500_timer);
+        }
         return;
+    }
 
     switch (msg->id)
     {
     case MSG_DEVICE_CAN_EVENT:
-        if (CarInforCallback)
-            CarInforCallback(msg->param1);
+        notify_message_to_ipc_socket(msg->param1);
         break;
     }
 }
@@ -136,6 +143,13 @@ void app_ipc_socket_stop_running(void)
     OTMS(TASK_ID_IPC_SOCKET, OTMS_S_INVALID);
 }
 
+void notify_message_to_ipc_socket(int cmd_parameter)
+{
+    if (CarInforCallback)
+    {
+        CarInforCallback(cmd_parameter);
+    }
+}
 /*******************************************************************************
  * FUNCTION: ipc_socket_send_handler
  *

@@ -136,11 +136,10 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
     TaskManagerStateGoRunning();
 #endif
     /////////////////////////////////////////////////////////////////////////////////////////////////////
-
     LOG_NONE("##################################BOOT COMPLETE##################################\r\n");
 }
 
-__attribute__((destructor)) void ExitCleanup()
+__attribute__((destructor)) void exit_cleanup()
 {
     LOG_LEVEL("OTSM so unloaded!\n");
 #if defined(PLATFORM_ITE_OPEN_RTOS) || defined(PLATFORM_LINUX_RISC)

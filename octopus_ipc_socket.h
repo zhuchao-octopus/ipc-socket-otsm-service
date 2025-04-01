@@ -74,6 +74,8 @@ extern "C"
      */
     void app_ipc_socket_post_running(void);
 
+    void app_ipc_socket_stop_running(void);
+    
     int ipc_socket_doCommand(uint8_t *data, uint8_t length);
     void register_car_infor_callback(CarInforCallback_t callback);
 

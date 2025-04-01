@@ -32,6 +32,8 @@
 #include "octopus_update_soc.h" // SOC update functions.
 #include "octopus_update_mcu.h" // MCU update functions.
 
+#include "octopus_ipc_socket.h"
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -95,7 +97,7 @@ extern "C"
         TASK_ID_UPDATE_MCU, /**< MCU update task. */
 
         TASK_ID_UPDATE_SOC, /**< SOC update task. */
-        
+
         TASK_ID_IPC_SOCKET,
         TASK_ID_MAX_NUM /**< Maximum number of tasks. */
     } TaskModule_t;
@@ -172,6 +174,7 @@ extern "C"
             },
         },
 #endif
+
 #ifdef TASK_MANAGER_STATE_MACHINE_KEY
         [TASK_ID_KEY] = {
             .state_limit = OTMS_S_INVALID,
@@ -185,6 +188,7 @@ extern "C"
             },
         },
 #endif
+
 #ifdef TASK_MANAGER_STATE_MACHINE_UPDATE
 #ifdef TASK_MANAGER_STATE_MACHINE_MCU
         [TASK_ID_UPDATE_MCU] = {
@@ -211,6 +215,20 @@ extern "C"
             },
         },
 #endif
+#endif
+
+#ifdef TASK_MANAGER_STATE_MACHINE_IPC_SOCKET
+        [TASK_ID_IPC_SOCKET] = {
+            .state_limit = OTMS_S_INVALID,
+            .func = {
+                [OTMS_S_INIT] = app_ipc_socket_init_running,
+                [OTMS_S_START] = app_ipc_socket_start_running,
+                [OTMS_S_ASSERT_RUN] = app_ipc_socket_assert_running,
+                [OTMS_S_RUNNING] = app_ipc_socket_running,
+                [OTMS_S_POST_RUN] = app_ipc_socket_post_running,
+                [OTMS_S_STOP] = app_ipc_socket_stop_running,
+            },
+        },
 #endif
     };
 

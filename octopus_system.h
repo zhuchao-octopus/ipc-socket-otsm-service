@@ -65,7 +65,7 @@ extern "C"{
 //#define TASK_MANAGER_STATE_MACHINE_BMS 1 
 //#define TASK_MANAGER_STATE_MACHINE_KEY 1 
 //#define TASK_MANAGER_STATE_MACHINE_UPDATE 1 
-
+#define TASK_MANAGER_STATE_MACHINE_IPC_SOCKET 1 
 
 /**
  * @brief System MPU (Microprocessor Unit) state definitions.
