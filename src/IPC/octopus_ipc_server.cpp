@@ -119,7 +119,7 @@ void signal_handler(int signum)
 void initialize_server()
 {
     std::cout << "Server initialize server started." << std::endl;
-
+    signal(SIGPIPE, SIG_IGN);
     // Set up signal handler for SIGINT (Ctrl+C)
     signal(SIGINT, signal_handler);
 
@@ -212,7 +212,7 @@ void initialize_otsm()
 
 void CarInforNotify_Callback(int cmd_parameter)
 {
-    std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
+    //std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
   
 #if 1
     ///std::vector<std::thread> threads;  

@@ -207,21 +207,42 @@ int Socket::send_response(int client_fd, std::vector<int> &resp_vector)
 // Send a response to the client
 int Socket::send_buff(int client_fd, char *resp_buffer, int length)
 {
-    // char resp_buffer[resp_vector.size()]; // Buffer for the response
-    // for (int i = 0; i < resp_vector.size(); i++)
-    //{
-    //     resp_buffer[i] = resp_vector[i];
-    // }
-    auto write_result = write(client_fd, resp_buffer, length); // Send the response
-    // Handle errors in sending the response
-    if (write_result == -1)
+    int total_sent = 0;
+    while (total_sent < length)
     {
-        std::cerr << "Socket Could not write response to client." << std::endl;
-        close_socket();
-        return -1;
+        ssize_t write_result = write(client_fd, resp_buffer + total_sent, length - total_sent);
+        //ssize_t write_result = send(client_fd, resp_buffer, length, MSG_NOSIGNAL);
+        if (write_result > 0)
+        {
+            total_sent += write_result; // 记录已发送数据
+        }
+        else if (write_result == -1)
+        {
+            if (errno == EINTR)
+            {
+                continue; // 被信号中断，重试 write()
+            }
+            else if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                std::cerr << "Socket: Write operation would block, retrying..." << std::endl;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 适当等待再试
+                continue;
+            }
+            else if (errno == EPIPE || errno == ECONNRESET)
+            {
+                std::cerr << "Socket: Client disconnected, closing connection..." << std::endl;
+                close(client_fd); // 关闭该客户端的 socket，防止资源泄漏
+                return -1;        // 终止发送
+            }
+            else
+            {
+                std::cerr << "Socket: Failed to write response, error: " << strerror(errno) << std::endl;
+                return -1; // 发生不可恢复错误
+            }
+        }
     }
 
-    return 0;
+    return 0; // 数据全部发送成功
 }
 
 int Socket::set_socket_non_blocking(int socket_fd)
