@@ -120,11 +120,6 @@ static uint32_t l_t_soc_timer; // Timer for state of charge monitoring
 void app_carinfo_init_running(void)
 {
     LOG_LEVEL("app_carinfo_init_running\r\n");
-
-    lt_meter.voltageSystem = 0x02;
-    lt_drivinfo.gear = (carinfo_drivinfo_gear_t)1;
-    lt_meter.soc = 100;
-
     ptl_register_module(M2A_MOD_METER, meter_module_send_handler, meter_module_receive_handler);
     ptl_register_module(M2A_MOD_INDICATOR, indicator_module_send_handler, indicator_module_receive_handler);
     ptl_register_module(M2A_MOD_DRIV_INFO, drivinfo_module_send_handler, drivinfo_module_receive_handler);
@@ -206,20 +201,23 @@ uint16_t app_carinfo_getSpeed(void)
     return lt_meter.speed_real;
 }
 
-carinfo_meter_t *app_carinfo_get_meter_info(void)
-{
-    return &lt_meter;
-}
-
 carinfo_indicator_t *app_carinfo_get_indicator_info(void)
 {
-    //lt_indicator.leftTurn = 0x03;
-    //lt_indicator.wifi = 0x0f;
+    lt_indicator.leftTurn = 0x03;
+    lt_indicator.wifi = 0x0f;
     return &lt_indicator;
+}
+
+carinfo_meter_t *app_carinfo_get_meter_info(void)
+{
+    lt_meter.soc=1;
+    lt_meter.speed_real=30;
+    return &lt_meter;
 }
 
 carinfo_drivinfo_t *app_carinfo_get_drivinfo_info(void)
 {
+    lt_drivinfo.gear = (carinfo_drivinfo_gear_t)1;
     return &lt_drivinfo;
 }
 

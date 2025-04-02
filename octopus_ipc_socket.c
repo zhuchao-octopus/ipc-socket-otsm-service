@@ -118,9 +118,12 @@ void app_ipc_socket_running(void)
     Msg_t *msg = get_message(TASK_ID_IPC_SOCKET);
     if (msg->id == NO_MSG)
     {
-        if (GetTickCounter(&l_t_msg_wait_500_timer) >= 30000)
+        //if (GetTickCounter(&l_t_msg_wait_500_timer) >= 30000)
+        if (GetTickCounter(&l_t_msg_wait_500_timer) >= 50)
         {
             notify_message_to_ipc_socket(CMD_GET_INDICATOR_INFO);
+            notify_message_to_ipc_socket(CMD_GET_METER_INFO);
+            notify_message_to_ipc_socket(CMD_GET_DRIVINFO_INFO);
             StartTickCounter(&l_t_msg_wait_500_timer);
         }
         return;
