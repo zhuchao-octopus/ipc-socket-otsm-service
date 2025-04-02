@@ -217,7 +217,7 @@ carinfo_meter_t *app_carinfo_get_meter_info(void)
 
 carinfo_drivinfo_t *app_carinfo_get_drivinfo_info(void)
 {
-    lt_drivinfo.gear = (carinfo_drivinfo_gear_t)1;
+    lt_drivinfo.gear = (carinfo_drivinfo_gear_t)8;
     return &lt_drivinfo;
 }
 
