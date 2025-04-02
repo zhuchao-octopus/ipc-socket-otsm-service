@@ -61,6 +61,7 @@ void handle_client(int client_fd);
 int handle_calculation(int client_fd, const std::vector<int> &query_vector);
 int handle_car_infor(int client_fd, const std::vector<int> &query_vector);
 int handle_help(int client_fd, const std::vector<int> &query_vector);
+int handle_config(int client_fd, const std::vector<int> &query_vector);
 // Path for the IPC socket file
 
 const char *socket_path = "/tmp/octopus/ipc_socket";
@@ -71,12 +72,71 @@ Socket server;
 // Mutex for server operations to ensure thread-safety
 std::mutex server_mutex;
 
-// Unordered set to track active clients
-std::unordered_set<int> active_clients;
-
 // Mutex for client operations to ensure thread-safety
 std::mutex clients_mutex;
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+// Thread-safe unordered set for active clients
+std::unordered_set<ClientInfo> active_clients;
+
+// **Thread-Safe Functions**
+void add_client(int fd, const std::string &ip, bool flag)
+{
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    active_clients.insert(ClientInfo(fd, ip, flag));
+}
+
+void remove_client(int fd)
+{
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    for (auto it = active_clients.begin(); it != active_clients.end(); ++it)
+    {
+        if (it->fd == fd)
+        {
+            active_clients.erase(it);
+            break;
+        }
+    }
+}
+
+void print_active_clients()
+{
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    for (const auto &client : active_clients)
+    {
+        std::cout << "Client FD: " << client.fd
+                  << ", IP: " << client.ip
+                  << ", Flag: " << client.flag << std::endl;
+    }
+}
+
+void update_client(int fd, bool new_flag)
+{
+    std::lock_guard<std::mutex> lock(clients_mutex); // 线程安全
+
+    // 在集合中查找匹配的 `fd`
+    auto it = std::find_if(active_clients.begin(), active_clients.end(),
+                           [fd](const ClientInfo &client)
+                           { return client.fd == fd; });
+
+    if (it != active_clients.end())
+    {
+        // 先取出原始值，修改后重新插入
+        ClientInfo updated_client = *it;
+        updated_client.flag = new_flag;
+
+        active_clients.erase(it);                         // 删除旧的
+        active_clients.insert(std::move(updated_client)); // 插入更新后的
+    }
+    else
+    {
+        std::cerr << "Client FD not found: " << fd << std::endl;
+    }
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to ensure the directory for the socket file exists
 void ensure_directory_exists(const char *path)
@@ -212,21 +272,23 @@ void initialize_otsm()
 
 void CarInforNotify_Callback(int cmd_parameter)
 {
-    //std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
-  
+    // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
+
 #if 1
-    ///std::vector<std::thread> threads;  
-    for (int client_id : active_clients) 
+    /// std::vector<std::thread> threads;
+    /// for (int client_id : active_clients)
+    for (const auto &client : active_clients)
     {
-        ///std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
-        ///threads.push_back(std::move(notify_thread));  
-        notify_carInfor_to_client(client_id, cmd_parameter);
+        /// std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
+        /// threads.push_back(std::move(notify_thread));
+        if (client.flag) // need push callback
+            notify_carInfor_to_client(client.fd, cmd_parameter);
     }
 
-    ///for (auto& thread : threads)
+    /// for (auto& thread : threads)
     ///{
-    ///    thread.join();  
-    ///}
+    ///     thread.join();
+    /// }
 #endif
 }
 
@@ -251,8 +313,9 @@ int main()
 
         // Lock the clients mutex to safely modify the active clients set
         {
-            std::lock_guard<std::mutex> lock(clients_mutex);
-            active_clients.insert(client_fd);
+            /// std::lock_guard<std::mutex> lock(clients_mutex);
+            /// active_clients.insert(client_fd);
+            add_client(client_fd, "", false);
         }
 
         // Create a thread to handle the client communication
@@ -276,7 +339,7 @@ void handle_client(int client_fd)
     std::cout << "Server handling client [" << client_fd << "]." << std::endl;
 
     // Buffers to hold query and response data
-    std::vector<int> query_vector(3);
+    std::vector<int> query_vector(IPC_SOCKET_QUERY_BUFFER_SIZE);
     int handle_result = 0;
     // Loop to continuously process client queries
     while (true)
@@ -301,6 +364,8 @@ void handle_client(int client_fd)
             handle_result = handle_help(client_fd, query_vector);
             break;
         case 1:
+            handle_result = handle_config(client_fd, query_vector);
+            break;
         case 2:
         case 3:
         case 4:
@@ -322,8 +387,9 @@ void handle_client(int client_fd)
 
     // Lock the clients mutex to safely remove the client from the active clients list
     {
-        std::lock_guard<std::mutex> lock(clients_mutex);
-        active_clients.erase(client_fd);
+        /// std::lock_guard<std::mutex> lock(clients_mutex);
+        /// active_clients.erase(client_fd);
+        remove_client(client_fd);
     }
 
     std::cout << "Server handling client [" << client_fd << "] closed." << std::endl;
@@ -332,14 +398,37 @@ void handle_client(int client_fd)
 int handle_help(int client_fd, const std::vector<int> &query_vector)
 {
     std::vector<int> resp_vector(1);
-    /// std::cout << "Server handle_help"<< std::endl;
-    for (int client_id : active_clients) // 遍历所有活跃客户端 ID
-    {
-        std::cout << "Server connected clients [" << client_fd << "] ";
-    }
+    print_active_clients();
     std::cout << std::endl;
     // Set the result in the response vector
     resp_vector[0] = CMD_GET_HELP_INFO;
+    // Lock the server mutex to safely send the response to the client
+    {
+        std::lock_guard<std::mutex> lock(server_mutex);
+        server.send_response(client_fd, resp_vector);
+    }
+    return 0;
+}
+
+int handle_config(int client_fd, const std::vector<int> &query_vector)
+{
+    std::vector<int> resp_vector(1);
+    int fd = client_fd;
+    if (query_vector[1] > 0)
+        fd = query_vector[1];
+
+    if (query_vector[2] == CMD_IPC_SOCKET_CONFIG_FLAG)
+    {
+        if (query_vector[3] > 0)
+            update_client(fd, true);
+        else
+            update_client(fd, false);
+    }
+
+    print_active_clients();
+    std::cout << std::endl;
+    // Set the result in the response vector
+    resp_vector[0] = CMD_IPC_SOCKET_CONFIG_FLAG;
     // Lock the server mutex to safely send the response to the client
     {
         std::lock_guard<std::mutex> lock(server_mutex);
@@ -405,7 +494,7 @@ void notify_carInfor_to_client(int client_fd, int cmd)
         carinfo_indicator_t *carinfo_indicator = get_indicator_info();
         if (carinfo_indicator == nullptr)
         {
-            // LOG_LEVEL("get_indicator_info() returned nullptr");
+            //LOG_LEVEL("get_indicator_info() returned nullptr");
             break;
         }
         //  Lock the server mutex to safely send the response to the client
@@ -423,7 +512,7 @@ void notify_carInfor_to_client(int client_fd, int cmd)
         carinfo_meter_t *carinfo_meter = get_meter_info();
         if (carinfo_meter == nullptr)
         {
-            // LOG_LEVEL("get_indicator_info() returned nullptr");
+            //LOG_LEVEL("get_indicator_info() returned nullptr");
             break;
         }
         //  Lock the server mutex to safely send the response to the client
@@ -441,7 +530,7 @@ void notify_carInfor_to_client(int client_fd, int cmd)
         carinfo_drivinfo_t *carinfo_drivinfo = get_drivinfo_info();
         if (carinfo_drivinfo == nullptr)
         {
-            // LOG_LEVEL("get_indicator_info() returned nullptr");
+            //LOG_LEVEL("get_indicator_info() returned nullptr");
             break;
         }
 
@@ -455,7 +544,7 @@ void notify_carInfor_to_client(int client_fd, int cmd)
         break;
     }
     default:
-    handle_help(client_fd,{0});
+        handle_help(client_fd, {0});
         break;
     }
 }

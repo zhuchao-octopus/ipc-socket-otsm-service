@@ -18,11 +18,12 @@
 
 std::unordered_map<std::string, int> operations = {
     {"help", 0},
-    {"add", 1},
+    {"set",  1},
     {"subtract", 2},
     {"multiply", 3},
     {"divide", 4},
-    {"car", 11}};
+    {"car", 11}
+};
 
 // Signal handler for clean-up on interrupt (e.g., Ctrl+C)
 void signal_handler(int signum)
@@ -31,20 +32,64 @@ void signal_handler(int signum)
     exit(signum);
 }
 
+std::vector<int> parse_arguments(int argc, char *argv[], std::vector<std::string> &original_args)
+{
+    std::vector<int> int_args;
+    
+    // 保存原始字符串参数
+    for (int i = 0; i < argc; ++i)
+    {
+        original_args.emplace_back(argv[i]);
+    }
+
+    // 确保至少有一个参数（程序名不算）
+    if (argc < 2)
+    {
+        std::cerr << "Error: No operation code provided!" << std::endl;
+        int_args.push_back(0);  // 默认操作码 0
+        return int_args;
+    }
+
+    // 查找操作码
+    auto key_iterator = operations.find(argv[1]);
+    int operation_code = (key_iterator != operations.end()) ? key_iterator->second : 0;
+    int_args.push_back(operation_code); // 把操作码作为第一个元素
+
+    // 解析剩余参数（从 argv[2] 开始）
+    for (int i = 2; i < argc; ++i)
+    {
+        try
+        {
+            int_args.push_back(std::stoi(argv[i])); // 转换字符串为整数
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "Warning: Cannot convert argument '" << argv[i] << "' to integer. Defaulting to 0." << std::endl;
+            int_args.push_back(0); // 转换失败时填充默认值 0
+        }
+    }
+
+    return int_args;
+}
+
 int main(int argc, char *argv[])
 {
-    std::unordered_map<std::string, int>::iterator key_iterator;
+   
     Socket client;
     int socket_client;
-    int key_operation = 0;
-    int key_number1 = 0;
-    int key_number2 = 0;
+    std::vector<std::string> original_arguments;
+    std::vector<int> integer_arguments = parse_arguments(argc, argv, original_arguments);
+    // 打印整数转换结果
+    std::cout << "Client: Converted integers (starting from index 1):" << std::endl;
+    for (const auto &num : integer_arguments)
+    {
+        std::cout << num << " ";
+    }
+    std::cout << std::endl;
 
-    std::vector<int> query_vector;
     // std::vector<int> response_vector;
     // Set up signal handler for SIGINT (Ctrl+C)
     signal(SIGINT, signal_handler);
-
     socket_client = client.open_socket();
     socket_client = client.connect_to_socket();
 
@@ -58,37 +103,7 @@ int main(int argc, char *argv[])
         std::cout << "Client: Open a socket [" << socket_client << "] connected to server" << std::endl;
     }
 
-    try
-    {
-        if (argc >= 2)
-        {
-            key_iterator = operations.find(argv[1]);
-            key_operation = (key_iterator != operations.end()) ? key_iterator->second : 0;
-        }
-        else
-        {
-            key_operation = 0; // 设置默认值
-        }
-        if (argc == 3)
-        {
-            key_number1 = std::stoi(argv[2]);
-            key_number2 = 0;
-        }
-        else if (argc == 4)
-        {
-            key_number1 = std::stoi(argv[2]);
-            key_number2 = std::stoi(argv[3]);
-        }
-    }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Client: Error while parsing arguments: " << e.what() << std::endl;
-        goto exit_loop;
-    }
-
-    std::cout << "Client: Sending query: " << key_operation << " " << key_number1 << " " << key_number2 << std::endl;
-    query_vector = {key_operation, key_number1, key_number2};
-    client.send_query(query_vector);
+    client.send_query(integer_arguments);
 
     // while (true)
     {
@@ -102,10 +117,5 @@ int main(int argc, char *argv[])
 
 exit_loop:
     client.close_socket();
-    return 0;
-}
-
-int parser_parameter(int argc, char *argv[])
-{
     return 0;
 }

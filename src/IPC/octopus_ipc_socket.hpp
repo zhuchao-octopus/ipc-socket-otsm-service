@@ -35,8 +35,36 @@
 
 #include "octopus_ipc_cmd.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
 #define IPC_SOCKET_RESPONSE_BUFFER_SIZE 20
 #define IPC_SOCKET_QUERY_BUFFER_SIZE 20
+// Structure to store active client information
+struct ClientInfo {
+    int fd;             // Client file descriptor
+    bool flag;          // Status flag for additional state tracking
+    std::string ip;     // Client IP address
+
+    // Constructor to initialize client information
+    ClientInfo(int fd, std::string ip, bool flag)
+        : fd(fd), ip(std::move(ip)), flag(flag) {}
+
+    // Overload == operator to allow comparison in unordered_set
+    bool operator==(const ClientInfo &other) const {
+        return fd == other.fd;  // Compare based on fd (assuming it's unique)
+    }
+};
+
+// Custom hash function specialization for ClientInfo
+namespace std {
+    template <>
+    struct hash<ClientInfo> {
+        size_t operator()(const ClientInfo &client) const {
+            return hash<int>()(client.fd);  // Use fd as the hash key
+        }
+    };
+}
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 class Socket
 {
