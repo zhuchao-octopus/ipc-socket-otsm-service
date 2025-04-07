@@ -32,89 +32,79 @@
 #include <string>
 #include <sys/stat.h>
 #include <iomanip>
-
+#include <sys/epoll.h>
+#include <unordered_map>
 #include "octopus_ipc_ptl.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 #define IPC_SOCKET_RESPONSE_BUFFER_SIZE 50
 #define IPC_SOCKET_QUERY_BUFFER_SIZE 50
 // Structure to store active client information
-struct ClientInfo {
-    int fd;             // Client file descriptor
-    bool flag;          // Status flag for additional state tracking
-    std::string ip;     // Client IP address
+struct ClientInfo
+{
+    int fd;         // Client file descriptor
+    bool flag;      // Status flag for additional state tracking
+    std::string ip; // Client IP address
 
     // Constructor to initialize client information
     ClientInfo(int fd, std::string ip, bool flag)
         : fd(fd), ip(std::move(ip)), flag(flag) {}
 
     // Overload == operator to allow comparison in unordered_set
-    bool operator==(const ClientInfo &other) const {
-        return fd == other.fd;  // Compare based on fd (assuming it's unique)
+    bool operator==(const ClientInfo &other) const
+    {
+        return fd == other.fd; // Compare based on fd (assuming it's unique)
     }
 };
 
 // Custom hash function specialization for ClientInfo
-namespace std {
+namespace std
+{
     template <>
-    struct hash<ClientInfo> {
-        size_t operator()(const ClientInfo &client) const {
-            return hash<int>()(client.fd);  // Use fd as the hash key
+    struct hash<ClientInfo>
+    {
+        size_t operator()(const ClientInfo &client) const
+        {
+            return hash<int>()(client.fd); // Use fd as the hash key
         }
     };
 }
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
-
 class Socket
 {
 private:
-    // Socket definitions
-    const char *socket_path; // Path of the Unix domain socket
-    int socket_fd;           // Socket file descriptor
-
-    int domain;   // Domain for the socket (AF_UNIX)
-    int type;     // Type of socket (SOCK_STREAM)
-    int protocol; // Protocol used (0 for default)
-
-    // Server-related definitions
+    // Existing member variables
+    const char *socket_path;  // Path to the Unix domain socket
+    int socket_fd;            // Socket file descriptor
+    int domain;               // Socket domain (AF_UNIX)
+    int type;                 // Socket type (SOCK_STREAM)
+    int protocol;             // Protocol used (0 for default)
     int max_waiting_requests; // Maximum number of pending requests
     sockaddr_un addr;         // Address for the socket
 
-    // Query and response definitions
-    int operation;           // Operation to be performed (e.g., addition, subtraction)
-    int number1;             // First operand for the arithmetic operation
-    int number2;             // Second operand for the arithmetic operation
-    int result;              // Result of the arithmetic operation
-    ssize_t query_bytesRead; // Bytes read from the query
-    ssize_t resp_bytesRead;  // Bytes read from the response
-
 public:
-    // Query and response buffer sizes
-    // int query_buffer_size;    // Size of the query buffer
-    // int respo_buffer_size;    // Size of the response buffer
-
-    // Constructor
+    // Existing methods
     Socket();
+    void init_socket_epoll();
     void init_socket_structor();
-    int set_socket_non_blocking(int socket_fd);
-    // Socket-related functions
+
     int open_socket(); // Open the socket
     int open_socket(int domain, int type, int protocol);
     int close_socket(); // Close the socket
 
-    // Server-side functions
     void bind_server_to_socket();                                    // Bind the socket to the specified address
-    void start_listening();                                          // Start listening for incoming client connections
+    void start_listening(); 
+                                             // Start listening for incoming client connections
     int wait_and_accept();                                           // Wait for a client connection and accept it
     int send_response(int client_fd, std::vector<int> &resp_vector); // Send a response to the client
     int send_buff(int client_fd, char *resp_buffer, int length);
+
     std::vector<int> get_query(int client_fd); // Retrieve the query from the client
 
     // Client-side functions
     int connect_to_socket(); // Connect to the server socket
     int connect_to_socket(std::string address);
-
     void send_query(const std::vector<int> &query_vector); // Send a query to the server
     void send_query(const std::vector<uint8_t> &query_vector);
     std::pair<std::vector<int>, int> get_response(); // Retrieve the response from the server

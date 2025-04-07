@@ -7,8 +7,12 @@
 #include <mutex>
 #include <csignal>
 #include <dlfcn.h>
+#include "IPC/octopus_ipc_ptl.hpp"
 
-typedef void (*ResponseCallback)(const std::vector<int> &response, int size);
+
+
+
+typedef void (*ResponseCallback)(const DataMessage &query_msg, int size);
 typedef void (*RegisterCallbackFunc)(ResponseCallback callback);
 static void *handle = nullptr; // 保持全局作用域
 
@@ -25,9 +29,10 @@ void printf_vector_bytes(const std::vector<int> &vec, int length)
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }
 
-void ipc_socket_reesponse_callback(const std::vector<int> &response, int size)
+void ipc_socket_reesponse_callback(const DataMessage &query_msg, int size)
 {
-    printf_vector_bytes(response, size);
+    //printf_vector_bytes(response, size);
+    query_msg.print();
 }
 
 void initialize_app_client()

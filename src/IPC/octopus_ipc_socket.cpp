@@ -32,7 +32,7 @@
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
-
+#define MAX_EVENTS 10 // Maximum number of events
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 // Signal handler for server shutdown on interruption signals
 static void signal_handler(int signum)
@@ -48,6 +48,7 @@ Socket::Socket()
     signal(SIGINT, signal_handler);
     signal(SIGKILL, signal_handler);
     signal(SIGTERM, signal_handler);
+    socket_fd = -1;
     // Server configuration
     max_waiting_requests = 10; // Max number of clients waiting to be served
     init_socket_structor();
@@ -166,8 +167,8 @@ int Socket::wait_and_accept()
 // Read the query from the client
 std::vector<int> Socket::get_query(int client_fd)
 {
-    char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];                 // Buffer for storing the query
-    query_bytesRead = read(client_fd, buffer, sizeof(buffer)); // Read the client query
+    char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];                     // Buffer for storing the query
+    int query_bytesRead = read(client_fd, buffer, sizeof(buffer)); // Read the client query
 
     // Handle read errors
     if (query_bytesRead <= 0)
@@ -211,7 +212,7 @@ int Socket::send_buff(int client_fd, char *resp_buffer, int length)
     while (total_sent < length)
     {
         ssize_t write_result = write(client_fd, resp_buffer + total_sent, length - total_sent);
-        //ssize_t write_result = send(client_fd, resp_buffer, length, MSG_NOSIGNAL);
+        // ssize_t write_result = send(client_fd, resp_buffer, length, MSG_NOSIGNAL);
         if (write_result > 0)
         {
             total_sent += write_result; // 记录已发送数据
@@ -245,24 +246,6 @@ int Socket::send_buff(int client_fd, char *resp_buffer, int length)
     return 0; // 数据全部发送成功
 }
 
-int Socket::set_socket_non_blocking(int socket_fd)
-{
-    int flags = fcntl(socket_fd, F_GETFL, 0);
-    if (flags == -1)
-    {
-        perror("fcntl");
-        return -1;
-    }
-
-    flags |= O_NONBLOCK;
-    if (fcntl(socket_fd, F_SETFL, flags) == -1)
-    {
-        perror("fcntl");
-        return -1;
-    }
-
-    return 0;
-}
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Connect the client to the server
 int Socket::connect_to_socket()
@@ -368,7 +351,7 @@ std::pair<std::vector<int>, int> Socket::get_response()
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void Socket::printf_vector_bytes(const std::vector<int> &vec, int length)
 {
     // std::cout << "printf_vector_bytes " << length << std::endl; //

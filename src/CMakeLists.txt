@@ -7,4 +7,4 @@ add_subdirectory(APP)
 add_executable(octopus_test main.cpp)
 
 # 连接库
-target_link_libraries(octopus_test PRIVATE dl)
+target_link_libraries(octopus_test PRIVATE OIPC dl)

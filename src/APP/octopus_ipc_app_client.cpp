@@ -12,7 +12,7 @@
  */
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+#include <list>
 #include "octopus_ipc_app_client.hpp"
 #include "../IPC/octopus_ipc_ptl.hpp"
 #include "../IPC/octopus_ipc_socket.hpp"
@@ -26,8 +26,8 @@ std::mutex callback_mutex;          // Mutex for callback synchronization
 Socket client;                      // IPC socket client instance
 // std::condition_variable ui_cv;
 
-typedef void (*ResponseCallback)(const std::vector<int> &response, int size);
-ResponseCallback g_callback = nullptr;
+typedef void (*OctopusAppResponseCallback)(const DataMessage &query_msg, int size);
+std::list<OctopusAppResponseCallback> g_callbacks;
 
 // Send a query to the server without additional data
 void app_send_query(uint8_t group, uint8_t msg)
@@ -80,26 +80,33 @@ void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &qu
  * @brief Registers a callback function to be invoked upon receiving a response.
  * @param callback Function pointer to the callback function.
  */
-void register_ipc_socket_callback(ResponseCallback callback)
+void register_ipc_socket_callback(OctopusAppResponseCallback callback)
 {
-    // if (g_callback)
+    if (callback)
     {
         std::lock_guard<std::mutex> lock(callback_mutex);
-        g_callback = callback;
+        g_callbacks.push_back(callback);
     }
 }
-
+void unregister_ipc_socket_callback(OctopusAppResponseCallback callback)
+{
+    std::lock_guard<std::mutex> lock(callback_mutex);
+    g_callbacks.remove(callback); // list remove，vector erase-remove idiom
+}
 /**
  * @brief Invokes the registered callback function with the received response data.
  * @param response The received response vector.
  * @param size The size of the response vector.
  */
-void notify_response(const std::vector<int> &response, int size)
+void notify_response(const DataMessage &query_msg, int size)
 {
     std::lock_guard<std::mutex> lock(callback_mutex);
-    if (g_callback)
+    for (const auto &cb : g_callbacks)
     {
-        g_callback(response, size);
+        if (cb)
+        {
+            cb(query_msg, size);
+        }
     }
 }
 
@@ -125,14 +132,33 @@ void reconnect_to_server()
 }
 
 // Function to check if data packet is complete
-bool is_complete_data_packet(const std::vector<int> &response, int size)
+DataMessage is_complete_data_packet(const std::vector<int> &response, int size)
 {
-    // Assuming the first 2 bytes of the response contain the data length (e.g., 2-byte length)
-    if (size > 0)
-        return true;
+    // Create DataMessage object to hold the parsed query data
+    DataMessage query_msg;
+    query_msg.group = -1;
+    query_msg.msg = -1;
+    // Ensure that the response is large enough to hold the expected fields
+    if (response.size() < 2 || size < 2)
+    {
+        // If the response is too small, return an empty DataMessage
+        return query_msg;  // Ensure a valid return value
+    }
 
-    return false;
+    // Parse the group and msg fields from the response
+    query_msg.group = static_cast<uint8_t>(response[0]); // Group (message category)
+    query_msg.msg = static_cast<uint8_t>(response[1]);   // Msg (command type)
+
+    // Add remaining data elements to the DataMessage's data field
+    for (size_t i = 2; i < response.size(); ++i)
+    {
+        query_msg.data.push_back(static_cast<uint8_t>(response[i]));
+    }
+
+    // If the size is valid and there is data, return the constructed DataMessage
+    return query_msg;
 }
+
 /**
  * @brief Continuously listens for incoming responses from the server.
  * If the connection is lost, the client attempts to reconnect automatically.
@@ -153,10 +179,10 @@ void receive_response_loop()
         auto response_pair = client.get_response();
         std::vector<int> response = response_pair.first;
         int size = response_pair.second;
-
-        if (is_complete_data_packet(response, size))
+        DataMessage query_msg = is_complete_data_packet(response, size);
+        if (query_msg.group >= 0)
         {
-            notify_response(response, size);
+            notify_response(query_msg, size);
         }
         else if (size == 0) // Likely a closed connection
         {
@@ -176,7 +202,7 @@ void receive_response_loop()
             }
         }
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Prevent excessive CPU usage
+        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Prevent excessive CPU usage
     }
 }
 

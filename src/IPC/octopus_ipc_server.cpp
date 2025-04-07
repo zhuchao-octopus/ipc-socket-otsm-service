@@ -275,10 +275,6 @@ void initialize_otsm()
 void CarInforNotify_Callback(int cmd_parameter)
 {
     // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
-
-#if 1
-    /// std::vector<std::thread> threads;
-    /// for (int client_id : active_clients)
     for (const auto &client : active_clients)
     {
         /// std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
@@ -286,12 +282,6 @@ void CarInforNotify_Callback(int cmd_parameter)
         if (client.flag) // need push callback
             notify_carInfor_to_client(client.fd, cmd_parameter);
     }
-
-    /// for (auto& thread : threads)
-    ///{
-    ///     thread.join();
-    /// }
-#endif
 }
 
 int main()
@@ -599,3 +589,6 @@ void notify_carInfor_to_client(int client_fd, int cmd)
         break;
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
