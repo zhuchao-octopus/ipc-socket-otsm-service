@@ -14,16 +14,17 @@
 
 #include <iomanip>
 #include <map>
+#include <algorithm>
+#include "octopus_ipc_ptl.hpp"
 #include "octopus_ipc_socket.hpp"
 
 std::unordered_map<std::string, int> operations = {
-    {"help", 0},
-    {"set",  1},
+    {"help", MSG_GROUP_0},
+    {"set", MSG_GROUP_SET},
     {"subtract", 2},
     {"multiply", 3},
     {"divide", 4},
-    {"car", 11}
-};
+    {"car", MSG_GROUP_CAR}};
 
 // Signal handler for clean-up on interrupt (e.g., Ctrl+C)
 void signal_handler(int signum)
@@ -32,90 +33,104 @@ void signal_handler(int signum)
     exit(signum);
 }
 
-std::vector<int> parse_arguments(int argc, char *argv[], std::vector<std::string> &original_args)
+DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &original_args)
 {
-    std::vector<int> int_args;
-    
-    // 保存原始字符串参数
+    DataMessage data_msg;
+    data_msg.group = 0; // Default group, can be modified or specified from parameters
+    data_msg.msg = 0;
+
+    // Save the original argument strings
     for (int i = 0; i < argc; ++i)
     {
         original_args.emplace_back(argv[i]);
     }
 
-    // 确保至少有一个参数（程序名不算）
-    if (argc < 2)
+    // Ensure there's at least one command (excluding the program name)
+    if (argc < 3)
     {
-        std::cerr << "Error: No operation code provided!" << std::endl;
-        int_args.push_back(0);  // 默认操作码 0
-        return int_args;
+        std::cerr << "Client: Error. No operation command or message ID provided!" << std::endl;
+        return data_msg;  // Return with default values
     }
 
-    // 查找操作码
-    auto key_iterator = operations.find(argv[1]);
-    int operation_code = (key_iterator != operations.end()) ? key_iterator->second : 0;
-    int_args.push_back(operation_code); // 把操作码作为第一个元素
+    // Find the operation code (group)
+    auto key_iter = operations.find(argv[1]);
+    data_msg.group = (key_iter != operations.end()) ? key_iter->second : 0;
 
-    // 解析剩余参数（从 argv[2] 开始）
-    for (int i = 2; i < argc; ++i)
+    // Ensure the second argument is a valid message ID (argv[2])
+    try
+    {
+        // Parse the message ID from argv[2]
+        data_msg.msg = static_cast<uint8_t>(std::stoul(argv[2]));  // Expecting message ID in the range of uint8_t (0-255)
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Client: Error. Invalid message ID '" << argv[2] << "'. Using 0 instead.\n";
+        data_msg.msg = 0;  // Default to 0 if invalid
+    }
+
+    // Parse the remaining arguments as uint8_t and add them to data
+    for (int i = 3; i < argc; ++i)
     {
         try
         {
-            int_args.push_back(std::stoi(argv[i])); // 转换字符串为整数
+            int val = std::stoi(argv[i]);
+            // Check the range of the argument and clamp it to 0-255
+            if (val < 0 || val > 255)
+            {
+                std::cerr << "Client: Warning Argument '" << argv[i] << "' out of range (0-255). Clamped to fit.\n";
+            }
+            uint8_t uval = static_cast<uint8_t>(std::clamp(val, 0, 255));
+            data_msg.data.push_back(uval);
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Warning: Cannot convert argument '" << argv[i] << "' to integer. Defaulting to 0." << std::endl;
-            int_args.push_back(0); // 转换失败时填充默认值 0
+            std::cerr << "Client: Warning. Cannot convert '" << argv[i] << "' to integer. Using 0 instead.\n";
+            data_msg.data.push_back(0);  // Add 0 if conversion fails
         }
     }
 
-    return int_args;
+    return data_msg;
 }
+
 
 int main(int argc, char *argv[])
 {
-   
     Socket client;
-    int socket_client;
+    int socket_client = -1;
     std::vector<std::string> original_arguments;
-    std::vector<int> integer_arguments = parse_arguments(argc, argv, original_arguments);
-    // 打印整数转换结果
-    std::cout << "Client: Converted integers (starting from index 1):" << std::endl;
-    for (const auto &num : integer_arguments)
-    {
-        std::cout << num << " ";
-    }
-    std::cout << std::endl;
+    DataMessage data_message = parse_arguments(argc, argv, original_arguments);
+    data_message.print();
 
-    // std::vector<int> response_vector;
-    // Set up signal handler for SIGINT (Ctrl+C)
+    // 设置 SIGINT 信号处理
     signal(SIGINT, signal_handler);
-    socket_client = client.open_socket();
-    socket_client = client.connect_to_socket();
 
-    if (socket_client < 0)
+    do
     {
-        std::cerr << "Client: Invalid socket of connection" << std::endl;
-        goto exit_loop;
-    }
-    else
-    {
-        std::cout << "Client: Open a socket [" << socket_client << "] connected to server" << std::endl;
-    }
+        socket_client = client.open_socket();
+        socket_client = client.connect_to_socket();
 
-    client.send_query(integer_arguments);
+        if (socket_client < 0)
+        {
+            std::cerr << "Client: Invalid socket of connection" << std::endl;
+            break; // 替代 goto
+        }
+        else
+        {
+            std::cout << "Client: Opened socket [" << socket_client << "] connected to server" << std::endl;
+        }
 
-    // while (true)
-    {
-        // auto [response, size] = client.get_response();
+        std::vector<uint8_t> serialized_data = data_message.serialize();
+        client.send_query(serialized_data);
+
         std::pair<std::vector<int>, int> response_pair = client.get_response();
         std::vector<int> response = response_pair.first;
         int size = response_pair.second;
+
         std::cout << "Client: Received response: ";
         client.printf_vector_bytes(response, size);
-    }
 
-exit_loop:
+    } while (false); // 只执行一次，但支持 break 退出
+
     client.close_socket();
     return 0;
 }

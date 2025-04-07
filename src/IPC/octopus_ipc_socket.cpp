@@ -308,7 +308,7 @@ int Socket::connect_to_socket(std::string address)
 }
 
 // Send a query from the client to the server
-void Socket::send_query(std::vector<int> &query_vector)
+void Socket::send_query(const std::vector<int> &query_vector)
 {
     char query_buffer[query_vector.size()]; // Buffer for the query
     for (int i = 0; i < query_vector.size(); i++)
@@ -325,6 +325,22 @@ void Socket::send_query(std::vector<int> &query_vector)
     }
 }
 
+void Socket::send_query(const std::vector<uint8_t> &query_vector)
+{
+    char query_buffer[query_vector.size()]; // Buffer for the query
+    for (int i = 0; i < query_vector.size(); i++)
+    {
+        query_buffer[i] = query_vector[i];
+    }
+    auto write_result = write(socket_fd, query_buffer, sizeof(query_buffer)); // Send the query
+
+    // Handle errors in sending the query
+    if (write_result == -1)
+    {
+        std::cerr << "Client: Could not write query to socket." << std::endl;
+        close_socket();
+    }
+}
 // Receive the response from the server
 std::pair<std::vector<int>, int> Socket::get_response()
 {
@@ -361,7 +377,7 @@ void Socket::printf_vector_bytes(const std::vector<int> &vec, int length)
 
     for (int i = 0; i < print_length; ++i)
     {
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << "0x" << (vec[i] & 0xFF) << " "; // 打印每个字节
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (vec[i] & 0xFF) << " ";
     }
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }
@@ -373,8 +389,7 @@ void Socket::printf_buffer_bytes(const std::vector<int> &vec, int length)
 
     for (int i = 0; i < print_count; ++i)
     {
-        std::cout << std::hex << std::setw(2) << std::setfill('0')
-                  << (vec[i] & 0xFF) << " "; // 取低 8 位当作 1 字节
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (vec[i] & 0xFF) << " "; // 取低 8 位当作 1 字节
     }
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }

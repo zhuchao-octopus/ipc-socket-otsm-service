@@ -20,8 +20,7 @@ void printf_vector_bytes(const std::vector<int> &vec, int length)
 
     for (int i = 0; i < print_length; ++i)
     {
-        std::cout << std::hex << std::setw(2) << std::setfill('0')
-                  << "0x" << (vec[i] & 0xFF) << " "; // 打印每个字节
+        std::cout << std::hex << std::setw(2) << std::setfill('0')  << "0x" << (vec[i] & 0xFF) << " "; // 打印每个字节
     }
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }
@@ -36,7 +35,7 @@ void initialize_app_client()
     // 加载共享库
     std::cout << "App initialize oui." << std::endl;
     handle = dlopen("libOAPPC.so", RTLD_LAZY);
-// handle = dlopen("libOTSM.so", RTLD_LAZY);
+    // handle = dlopen("libOTSM.so", RTLD_LAZY);
 #if 1
     if (!handle)
     {

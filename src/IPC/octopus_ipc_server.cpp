@@ -30,8 +30,10 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_set>
+#include <algorithm>
 #include <dlfcn.h>
 #include "octopus_ipc_socket.hpp"
+#include "octopus_logger.hpp"
 #include "../OTSM/octopus_carinfor.h"
 #include "../OTSM/octopus_ipc_socket.h"
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -58,10 +60,10 @@ void CarInforNotify_Callback(int cmd_parameter);
 void notify_carInfor_to_client(int client_fd, int cmd);
 void handle_client(int client_fd);
 
-int handle_calculation(int client_fd, const std::vector<int> &query_vector);
-int handle_car_infor(int client_fd, const std::vector<int> &query_vector);
-int handle_help(int client_fd, const std::vector<int> &query_vector);
-int handle_config(int client_fd, const std::vector<int> &query_vector);
+int handle_calculation(int client_fd, const DataMessage &query_msg);
+int handle_car_infor(int client_fd, const DataMessage &query_msg);
+int handle_help(int client_fd, const DataMessage &query_msg);
+int handle_config(int client_fd, const DataMessage &query_msg);
 // Path for the IPC socket file
 
 const char *socket_path = "/tmp/octopus/ipc_socket";
@@ -294,6 +296,8 @@ void CarInforNotify_Callback(int cmd_parameter)
 
 int main()
 {
+    LOG_CC("\n#######################################################################################");
+    LOG_CC("Octopus IPC Socket Server Started Successfully.");
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     initialize_otsm();
     initialize_server();
@@ -338,213 +342,260 @@ void handle_client(int client_fd)
 {
     std::cout << "Server handling client [" << client_fd << "]." << std::endl;
 
-    // Buffers to hold query and response data
+    // Buffers to hold the query and response data
     std::vector<int> query_vector(IPC_SOCKET_QUERY_BUFFER_SIZE);
     int handle_result = 0;
-    // Loop to continuously process client queries
+
+    // Infinite loop to process client queries continuously
     while (true)
     {
-        // Lock the server mutex to safely fetch the query data
+        // Lock the server mutex to safely fetch the query data for the client
         {
-            // std::lock_guard<std::mutex> lock(server_mutex);
+            // Locking server_mutex ensures thread safety while accessing client query data
             query_vector = server.get_query(client_fd);
         }
 
-        // If the query is empty, break the loop and end the communication
+        // If the query is empty (no data from client), break the loop and end the communication
         if (query_vector.empty())
         {
-            /// std::cout << "Server handling client [" << client_fd << "] empty,existing." << std::endl;
+            // Query is empty, so we terminate the loop
             break;
         }
 
-        // Perform the requested operation based on the query
-        switch (query_vector[0])
+        // Create DataMessage object to hold the parsed query data
+        DataMessage query_msg;
+
+        // The first two fields in the protocol are group and msg (message type)
+        if (query_vector.size() >= 2)
         {
-        case 0:
-            handle_result = handle_help(client_fd, query_vector);
+            // Parse the group and msg fields from the query_vector and store them in the DataMessage
+            query_msg.group = static_cast<uint8_t>(query_vector[0]); // Parse group (message category)
+            query_msg.msg = static_cast<uint8_t>(query_vector[1]);   // Parse msg (command type)
+        }
+
+        // The remaining elements in query_vector are considered as data
+        for (size_t i = 2; i < query_vector.size(); ++i)
+        {
+            // Add data elements to the DataMessage's data field
+            query_msg.data.push_back(static_cast<uint8_t>(query_vector[i]));
+        }
+
+        // Perform the requested operation based on the group field in the DataMessage
+        switch (query_msg.group)
+        {
+        case MSG_GROUP_HELP:
+            handle_result = handle_help(client_fd, query_msg); // Handle help command
             break;
-        case 1:
-            handle_result = handle_config(client_fd, query_vector);
+        case MSG_GROUP_SET:
+            handle_result = handle_config(client_fd, query_msg); // Handle configuration command
             break;
-        case 2:
-        case 3:
-        case 4:
-            handle_result = handle_calculation(client_fd, query_vector);
+        case 2:                                                       // Placeholder for another command group
+        case 3:                                                       // Placeholder for another command group
+        case 4:                                                       // Placeholder for another command group
+            handle_result = handle_calculation(client_fd, query_msg); // Handle calculation command
             break;
-        case 11:
-            handle_result = handle_car_infor(client_fd, query_vector);
+        case MSG_GROUP_CAR:
+            handle_result = handle_car_infor(client_fd, query_msg); // Handle car-related info command
             break;
         default:
-            handle_result = handle_help(client_fd, query_vector);
+            // Default action when no known group is matched
+            handle_result = handle_help(client_fd, query_msg); // Respond with help info
             break;
         }
 
+        // Log the result after handling the query
         std::cout << "Server handling client [" << client_fd << "] cmd[" << query_vector[0] << "] done." << std::endl;
     }
 
-    // Close the client connection
+    // Close the client connection after finishing the interaction
     close(client_fd);
 
     // Lock the clients mutex to safely remove the client from the active clients list
     {
-        /// std::lock_guard<std::mutex> lock(clients_mutex);
-        /// active_clients.erase(client_fd);
-        remove_client(client_fd);
+        // Mutex is locked here to safely modify the active_clients list (if needed)
+        remove_client(client_fd); // Remove the client from active list
     }
 
     std::cout << "Server handling client [" << client_fd << "] closed." << std::endl;
 }
 
-int handle_help(int client_fd, const std::vector<int> &query_vector)
+int handle_help(int client_fd, const DataMessage &query_msg)
 {
+    // Print the parsed DataMessage for debugging purposes
+    query_msg.print(); // Print the incoming query message for visibility
+
+    // Prepare response vector with a predefined response code
     std::vector<int> resp_vector(1);
+
+    // Optionally print active clients to log the current client activity
     print_active_clients();
     std::cout << std::endl;
-    // Set the result in the response vector
-    resp_vector[0] = CMD_GET_HELP_INFO;
+
+    // Set the response message based on the protocol
+    resp_vector[0] = MSG_GROUP_HELP; // Respond with predefined help information message
+
     // Lock the server mutex to safely send the response to the client
     {
+        // Ensure thread safety while sending the response back to the client
         std::lock_guard<std::mutex> lock(server_mutex);
-        server.send_response(client_fd, resp_vector);
+        server.send_response(client_fd, resp_vector); // Send the help info response to client
     }
+
+    // Return success
     return 0;
 }
 
-int handle_config(int client_fd, const std::vector<int> &query_vector)
+int handle_config(int client_fd, const DataMessage &query_msg)
 {
-    std::vector<int> resp_vector(1);
-    int fd = client_fd;
-    if (query_vector[1] > 0)
-        fd = query_vector[1];
+    // Extract the file descriptor from the query data or use the provided one
+    int fd = (query_msg.data.empty() || query_msg.data[0] <= 0) ? client_fd : query_msg.data[0];
 
-    if (query_vector[2] == CMD_IPC_SOCKET_CONFIG_FLAG)
+    // If the message is related to IPC socket configuration, update the client status
+    if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_FLAG)
     {
-        if (query_vector[3] > 0)
-            update_client(fd, true);
-        else
-            update_client(fd, false);
+        // Update client based on the first data value
+        bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
+        update_client(fd, is_active); // Update the client state (active/inactive)
     }
 
+    // Log the current active clients
     print_active_clients();
     std::cout << std::endl;
-    // Set the result in the response vector
-    resp_vector[0] = CMD_IPC_SOCKET_CONFIG_FLAG;
+
+    // Prepare response vector with the set message group
+    std::vector<int> resp_vector(1, MSG_GROUP_SET); // Set response to MSG_GROUP_SET
+
     // Lock the server mutex to safely send the response to the client
     {
         std::lock_guard<std::mutex> lock(server_mutex);
-        server.send_response(client_fd, resp_vector);
+        server.send_response(client_fd, resp_vector); // Send the response to the client
     }
+
+    // Return success
     return 0;
 }
+
 // Function to handle calculation logic
-int handle_calculation(int client_fd, const std::vector<int> &query_vector)
+int handle_calculation(int client_fd, const DataMessage &query_msg)
 {
     int calc_result = 0;
-    std::vector<int> resp_vector(1);
+    std::vector<int> resp_vector(1); // Initialize response vector with one element
 
-    switch (query_vector[0])
+    // Ensure the data is large enough to hold the operands
+    if (query_msg.data.size() < 3)
     {
-    case 1:
-        calc_result = query_vector[1] + query_vector[2];
-        break;
-    case 2:
-        calc_result = query_vector[1] - query_vector[2];
-        break;
-    case 3:
-        calc_result = query_vector[1] * query_vector[2];
-        break;
-    case 4:
-        if (query_vector[2] == 0)
-        {
-            std::cerr << "Server Error: Division by zero!" << std::endl;
-            calc_result = 0;
-        }
-        else
-        {
-            calc_result = query_vector[1] / query_vector[2];
-        }
-        break;
-    default:
-        std::cerr << "Server Invalid operation requested!" << std::endl;
-        break;
+        std::cerr << "Server Error: Insufficient operands for calculation!" << std::endl;
+        resp_vector[0] = -1; // Indicate error with a negative result
     }
-    // Set the calculated result in the response vector
-    resp_vector[0] = calc_result;
+    else
+    {
+        // Switch operation based on the first data element (operation type)
+        switch (query_msg.data[0])
+        {
+        case 1: // Addition
+            calc_result = query_msg.data[1] + query_msg.data[2];
+            break;
+        case 2: // Subtraction
+            calc_result = query_msg.data[1] - query_msg.data[2];
+            break;
+        case 3: // Multiplication
+            calc_result = query_msg.data[1] * query_msg.data[2];
+            break;
+        case 4: // Division
+            if (query_msg.data[2] == 0)
+            {
+                std::cerr << "Server Error: Division by zero!" << std::endl;
+                calc_result = 0; // Set result to 0 in case of division by zero
+            }
+            else
+            {
+                calc_result = query_msg.data[1] / query_msg.data[2];
+            }
+            break;
+        default:
+            std::cerr << "Server Error: Invalid operation requested!" << std::endl;
+            calc_result = -1; // Indicate error with a negative result
+            break;
+        }
+
+        // Set the calculated result in the response vector
+        resp_vector[0] = calc_result;
+    }
+
     // Lock the server mutex to safely send the response to the client
     {
         std::lock_guard<std::mutex> lock(server_mutex);
         server.send_response(client_fd, resp_vector);
     }
+
     return calc_result;
 }
 
-int handle_car_infor(int client_fd, const std::vector<int> &query_vector)
+int handle_car_infor(int client_fd, const DataMessage &query_msg)
 {
-    notify_carInfor_to_client(client_fd, query_vector[1]);
+    notify_carInfor_to_client(client_fd, query_msg.msg);
     return 0;
 }
+// Helper function to handle the car info response logic
+template <typename T>
+void send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, const std::string &info_type)
+{
+    if (car_info == nullptr)
+    {
+        std::cerr << "Server Error: " << info_type << " returned nullptr!" << std::endl;
+        return;
+    }
 
+    // Create a DataMessage to follow the protocol format
+    DataMessage data_msg;
+    data_msg.group = MSG_GROUP_CAR; // Set appropriate group based on the info type
+    data_msg.msg = msg;             // Set message ID based on info type
+
+    // Directly copy the car info data into the msg.data vector
+    data_msg.data.clear(); // Clear any existing data
+    data_msg.data.insert(data_msg.data.end(), reinterpret_cast<uint8_t *>(car_info), reinterpret_cast<uint8_t *>(car_info) + size);
+
+    // Serialize the DataMessage into the protocol format
+    std::vector<uint8_t> serialized_data = data_msg.serialize();
+    size_t data_size = serialized_data.size();
+    char *buffer = reinterpret_cast<char *>(serialized_data.data());
+
+    // Print the buffer contents for debugging
+    std::cout << "Server handling client [" << client_fd << "] " << info_type << " " << data_size << " bytes: ";
+    server.printf_buffer_bytes(buffer, data_size);
+    // Lock the server mutex to safely send the response to the client
+    {
+        std::lock_guard<std::mutex> lock(server_mutex);
+        server.send_buff(client_fd, buffer, data_size);
+    }
+}
+
+// Main function to notify car info to the client
 void notify_carInfor_to_client(int client_fd, int cmd)
 {
-    // std::vector<int> resp_vector(sizeof(indicator));
     switch (cmd)
     {
     case CMD_GET_INDICATOR_INFO:
     {
         carinfo_indicator_t *carinfo_indicator = get_indicator_info();
-        if (carinfo_indicator == nullptr)
-        {
-            //LOG_LEVEL("get_indicator_info() returned nullptr");
-            break;
-        }
-        //  Lock the server mutex to safely send the response to the client
-        std::cout << "Server handling client [" << client_fd << "] handle_car_infor " << sizeof(carinfo_indicator_t) << " bytes:";
-        server.printf_buffer_bytes(carinfo_indicator, sizeof(carinfo_indicator_t));
-
-        {
-            std::lock_guard<std::mutex> lock(server_mutex);
-            server.send_buff(client_fd, reinterpret_cast<char *>(carinfo_indicator), sizeof(carinfo_indicator_t));
-        }
+        send_car_info_to_client(client_fd, cmd, carinfo_indicator, sizeof(carinfo_indicator_t), "handle_car_infor (Indicator)");
         break;
     }
     case CMD_GET_METER_INFO:
     {
         carinfo_meter_t *carinfo_meter = get_meter_info();
-        if (carinfo_meter == nullptr)
-        {
-            //LOG_LEVEL("get_indicator_info() returned nullptr");
-            break;
-        }
-        //  Lock the server mutex to safely send the response to the client
-        std::cout << "Server handling client [" << client_fd << "] handle_car_infor " << sizeof(carinfo_meter_t) << " bytes:";
-        server.printf_buffer_bytes(carinfo_meter, sizeof(carinfo_meter_t));
-
-        {
-            std::lock_guard<std::mutex> lock(server_mutex);
-            server.send_buff(client_fd, reinterpret_cast<char *>(carinfo_meter), sizeof(carinfo_meter_t));
-        }
+        send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
         break;
     }
     case CMD_GET_DRIVINFO_INFO:
     {
         carinfo_drivinfo_t *carinfo_drivinfo = get_drivinfo_info();
-        if (carinfo_drivinfo == nullptr)
-        {
-            //LOG_LEVEL("get_indicator_info() returned nullptr");
-            break;
-        }
-
-        //  Lock the server mutex to safely send the response to the client
-        std::cout << "Server handling client [" << client_fd << "] handle_car_infor " << sizeof(carinfo_drivinfo_t) << " bytes:";
-        server.printf_buffer_bytes(carinfo_drivinfo, sizeof(carinfo_drivinfo_t));
-        {
-            std::lock_guard<std::mutex> lock(server_mutex);
-            server.send_buff(client_fd, reinterpret_cast<char *>(carinfo_drivinfo), sizeof(carinfo_drivinfo_t));
-        }
+        send_car_info_to_client(client_fd, cmd, carinfo_drivinfo, sizeof(carinfo_drivinfo_t), "handle_car_infor (Driver)");
         break;
     }
     default:
-        handle_help(client_fd, {0});
+        // If the command is invalid, call handle_help to notify the client
+        // handle_help(client_fd, {0});
         break;
     }
 }

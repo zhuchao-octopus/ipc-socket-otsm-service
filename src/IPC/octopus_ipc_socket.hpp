@@ -33,11 +33,11 @@
 #include <sys/stat.h>
 #include <iomanip>
 
-#include "octopus_ipc_cmd.hpp"
+#include "octopus_ipc_ptl.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define IPC_SOCKET_RESPONSE_BUFFER_SIZE 20
-#define IPC_SOCKET_QUERY_BUFFER_SIZE 20
+#define IPC_SOCKET_RESPONSE_BUFFER_SIZE 50
+#define IPC_SOCKET_QUERY_BUFFER_SIZE 50
 // Structure to store active client information
 struct ClientInfo {
     int fd;             // Client file descriptor
@@ -115,7 +115,8 @@ public:
     int connect_to_socket(); // Connect to the server socket
     int connect_to_socket(std::string address);
 
-    void send_query(std::vector<int> &query_vector); // Send a query to the server
+    void send_query(const std::vector<int> &query_vector); // Send a query to the server
+    void send_query(const std::vector<uint8_t> &query_vector);
     std::pair<std::vector<int>, int> get_response(); // Retrieve the response from the server
 
     void printf_vector_bytes(const std::vector<int> &vec, int length);
