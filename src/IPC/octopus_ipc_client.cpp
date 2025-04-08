@@ -99,7 +99,7 @@ int main(int argc, char *argv[])
     int socket_client = -1;
     std::vector<std::string> original_arguments;
     DataMessage data_message = parse_arguments(argc, argv, original_arguments);
-    data_message.print();
+    data_message.print("Client main");
 
     // 设置 SIGINT 信号处理
     signal(SIGINT, signal_handler);
@@ -122,8 +122,8 @@ int main(int argc, char *argv[])
         std::vector<uint8_t> serialized_data = data_message.serialize();
         client.send_query(serialized_data);
 
-        std::pair<std::vector<int>, int> response_pair = client.get_response();
-        std::vector<int> response = response_pair.first;
+        std::pair<std::vector<uint8_t>, int> response_pair = client.get_response();
+        std::vector<uint8_t> response = response_pair.first;
         int size = response_pair.second;
 
         std::cout << "Client: Received response: ";

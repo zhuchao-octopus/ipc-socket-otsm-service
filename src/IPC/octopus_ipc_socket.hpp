@@ -37,8 +37,8 @@
 #include "octopus_ipc_ptl.hpp"
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define IPC_SOCKET_RESPONSE_BUFFER_SIZE 50
-#define IPC_SOCKET_QUERY_BUFFER_SIZE 50
+#define IPC_SOCKET_RESPONSE_BUFFER_SIZE 255
+#define IPC_SOCKET_QUERY_BUFFER_SIZE 255
 // Structure to store active client information
 struct ClientInfo
 {
@@ -100,16 +100,16 @@ public:
     int send_response(int client_fd, std::vector<int> &resp_vector); // Send a response to the client
     int send_buff(int client_fd, char *resp_buffer, int length);
 
-    std::vector<int> get_query(int client_fd); // Retrieve the query from the client
+    std::vector<uint8_t> get_query(int client_fd); // Retrieve the query from the client
 
     // Client-side functions
     int connect_to_socket(); // Connect to the server socket
     int connect_to_socket(std::string address);
     void send_query(const std::vector<int> &query_vector); // Send a query to the server
     void send_query(const std::vector<uint8_t> &query_vector);
-    std::pair<std::vector<int>, int> get_response(); // Retrieve the response from the server
+    std::pair<std::vector<uint8_t>, int> get_response(); // Retrieve the response from the server
 
-    void printf_vector_bytes(const std::vector<int> &vec, int length);
-    void printf_buffer_bytes(const std::vector<int> &vec, int length);
+    void printf_vector_bytes(const std::vector<uint8_t> &vec, int length);
+    void printf_buffer_bytes(const std::vector<uint8_t> &vec, int length);
     void printf_buffer_bytes(const void *buffer, int length);
 };

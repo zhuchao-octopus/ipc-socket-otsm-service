@@ -10,10 +10,8 @@
 #include "IPC/octopus_ipc_ptl.hpp"
 
 
-
-
-typedef void (*ResponseCallback)(const DataMessage &query_msg, int size);
-typedef void (*RegisterCallbackFunc)(ResponseCallback callback);
+typedef void (*OctopusAppResponseCallback)(const DataMessage &query_msg, int size);
+typedef void (*RegisterCallbackFunc)(std::string func_name, OctopusAppResponseCallback callback);
 static void *handle = nullptr; // 保持全局作用域
 
 void printf_vector_bytes(const std::vector<int> &vec, int length)
@@ -29,10 +27,10 @@ void printf_vector_bytes(const std::vector<int> &vec, int length)
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }
 
-void ipc_socket_reesponse_callback(const DataMessage &query_msg, int size)
+void app_ipc_socket_reesponse_callback(const DataMessage &query_msg, int size)
 {
     //printf_vector_bytes(response, size);
-    query_msg.print();
+    query_msg.print("app callback");
 }
 
 void initialize_app_client()
@@ -41,7 +39,7 @@ void initialize_app_client()
     std::cout << "App initialize oui." << std::endl;
     handle = dlopen("libOAPPC.so", RTLD_LAZY);
     // handle = dlopen("libOTSM.so", RTLD_LAZY);
-#if 1
+
     if (!handle)
     {
         std::cerr << "App Failed to load app client library: " << dlerror() << std::endl;
@@ -58,9 +56,9 @@ void initialize_app_client()
 
     if (register_ipc_socket_callback)
     {
-        register_ipc_socket_callback(ipc_socket_reesponse_callback);
+        register_ipc_socket_callback("app_ipc_socket_reesponse_callback",app_ipc_socket_reesponse_callback);
     }
-#endif
+
 }
 void cleanup()
 {

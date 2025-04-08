@@ -39,8 +39,11 @@ public:
     // @param message: The actual log message to be displayed
     // @param func_name: The name of the function from which the log is called
     static void log_to_file(const std::string& message, const std::string& func_name);
-};
 
+    void rotate();
+};
+const std::string log_file = "/tmp/octopus_ipc_server.log";
+const size_t max_log_size = 1024 * 1024;  // 设置日志文件最大为1MB
 // Macro for logging with automatic function name
 #define LOG_CC(...) Logger::log(__VA_ARGS__, __FUNCTION__)
 #define LOG_CCC(tag, ...) Logger::log(tag, __VA_ARGS__, __FUNCTION__)

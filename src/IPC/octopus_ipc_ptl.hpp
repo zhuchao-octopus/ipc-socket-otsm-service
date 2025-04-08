@@ -26,6 +26,11 @@
 #include <unordered_map>
 #include <vector>
 
+#define MERGE_BYTES(byte1, byte2) ((static_cast<unsigned int>(byte1) << 8) | (static_cast<unsigned int>(byte2)))
+#define SPLIT_TO_BYTES(value, byte1, byte2)                  \
+    byte1 = static_cast<unsigned char>((value >> 8) & 0xFF); \
+    byte2 = static_cast<unsigned char>(value & 0xFF);
+
 // Message group definitions for IPC socket communication
 enum MessageGroup
 {
@@ -50,11 +55,14 @@ enum MessageGroup
 // Individual message definitions
 enum Message
 {
-    MSG_GET_HELP_INFO = 100,
+    MSG_GET_HELP_INFO = 0,
     MSG_IPC_SOCKET_CONFIG_FLAG = 50,
-    MSG_GET_INDICATOR_INFO = 101,
-    MSG_GET_METER_INFO = 102,
-    MSG_GET_DRIVINFO_INFO = 103
+    MSG_IPC_SOCKET_CONFIG_PUSH_DELAY,
+    MSG_IPC_SOCKET_CONFIG_IP,
+
+    MSG_GET_INDICATOR_INFO = 100,
+    MSG_GET_METER_INFO = 101,
+    MSG_GET_DRIVINFO_INFO = 102
 };
 
 #define MSG_GROUP_HELP MSG_GROUP_0
@@ -64,9 +72,11 @@ enum Message
 // DataMessage structure to represent the message format
 struct DataMessage
 {
-    uint8_t group;      // Message ID to differentiate modules or groups
-    uint8_t msg;           // Command type for the message
-
+    static constexpr uint16_t HEADER = 0xA5A5;  // 固定的头码
+    uint16_t header;      // Header byte (e.g., a unique identifier for the message type)
+    uint8_t group; // Message ID to differentiate modules or groups
+    uint8_t msg;   // Command type for the message
+    uint16_t length;     // Length of the data (excluding header and length itself)
     std::vector<uint8_t> data; // Array of data elements
 
     // Serialize the DataMessage into a binary format for transmission
@@ -74,8 +84,9 @@ struct DataMessage
 
     // Deserialize the binary data into a DataMessage structure
     static DataMessage deserialize(const std::vector<uint8_t> &buffer);
-
-    void  print() const;
+    bool is_valid_packet();
+    size_t get_total_packet_size() const;
+    void print(std::string tag) const;
 };
 
 // Function to get a human-readable string for a message group

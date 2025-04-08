@@ -20,7 +20,10 @@
 #include <mutex>
 #include <csignal>
 #include <chrono>
+#include "../IPC/octopus_ipc_ptl.hpp"
+#include "../IPC/octopus_logger.hpp"
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef __cplusplus
 extern "C"
 {
@@ -31,14 +34,14 @@ extern "C"
      * @param response The received response data.
      * @param size The size of the response vector.
      */
-    typedef void (*ResponseCallback)(const std::vector<int> &response, int size);
+    typedef void (*OctopusAppResponseCallback)(const DataMessage &query_msg, int size);
 
     /**
      * @brief Registers a callback function to be called when a response is received.
      * @param callback Function pointer to the callback.
      */
-    void register_ipc_socket_callback(ResponseCallback callback);
-
+    void register_ipc_socket_callback(std::string func_name, OctopusAppResponseCallback callback);
+    void unregister_ipc_socket_callback(OctopusAppResponseCallback callback);
     /**
      * @brief Initializes the client connection and starts the response receiver thread.
      * This function is automatically called when the shared library is loaded.
@@ -51,15 +54,15 @@ extern "C"
      */
     void exit_cleanup();
 
+    void start_request_push_data();
+
 #ifdef __cplusplus
 }
 #endif
 
 void app_send_query(uint8_t group, uint8_t msg);
-
 void app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &query_array);
-
 void app_send_command(uint8_t group, uint8_t msg);
+void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &parameters);
 
-void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &query_array);
 #endif // CLIENT_HPP

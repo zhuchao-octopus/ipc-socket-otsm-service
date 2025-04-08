@@ -165,25 +165,18 @@ int Socket::wait_and_accept()
 }
 
 // Read the query from the client
-std::vector<int> Socket::get_query(int client_fd)
+std::vector<uint8_t> Socket::get_query(int client_fd)
 {
-    char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];                     // Buffer for storing the query
-    int query_bytesRead = read(client_fd, buffer, sizeof(buffer)); // Read the client query
+    char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];
+    int query_bytesRead = read(client_fd, buffer, sizeof(buffer));
 
-    // Handle read errors
     if (query_bytesRead <= 0)
     {
-        return {}; // Return an empty vector if reading failed
+        return {}; // Return empty vector on error or disconnection
     }
 
-    // Convert the buffer into a vector of integers
-    std::vector<int> query_vec(sizeof(buffer));
-    for (int i = 0; i < sizeof(buffer); i++)
-    {
-        query_vec[i] = buffer[i];
-    }
-
-    return query_vec;
+    // Only copy the actual number of bytes read
+    return std::vector<uint8_t>(buffer, buffer + query_bytesRead);
 }
 
 // Send a response to the client
@@ -325,11 +318,10 @@ void Socket::send_query(const std::vector<uint8_t> &query_vector)
     }
 }
 // Receive the response from the server
-std::pair<std::vector<int>, int> Socket::get_response()
+std::pair<std::vector<uint8_t>, int> Socket::get_response()
 {
-    std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Introduce a short delay
-
-    char result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                        // Buffer for the response
+    ///std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Introduce a short delay
+    uint8_t result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                        // Buffer for the response
     int resp_bytesRead = read(socket_fd, result_buffer, sizeof(result_buffer)); // Read the response
     // std::cout << "get_response " << resp_bytesRead <<"/"<< sizeof(result_buffer)<< std::endl; //
     //  Handle errors in receiving the response
@@ -341,10 +333,10 @@ std::pair<std::vector<int>, int> Socket::get_response()
     }
 
     // Convert the response buffer into a vector of integers (only the valid received bytes)
-    std::vector<int> result_vec(resp_bytesRead);
+    std::vector<uint8_t> result_vec(resp_bytesRead);
     for (int i = 0; i < resp_bytesRead; i++)
     {
-        result_vec[i] = static_cast<unsigned char>(result_buffer[i]); // Ensure proper unsigned conversion
+        result_vec[i] = static_cast<uint8_t>(result_buffer[i]); // Ensure proper unsigned conversion
     }
 
     return {result_vec, resp_bytesRead}; // Return the received data and size
@@ -352,7 +344,7 @@ std::pair<std::vector<int>, int> Socket::get_response()
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void Socket::printf_vector_bytes(const std::vector<int> &vec, int length)
+void Socket::printf_vector_bytes(const std::vector<uint8_t> &vec, int length)
 {
     // std::cout << "printf_vector_bytes " << length << std::endl; //
     //  确保 length 不超过 vector 的大小
@@ -365,7 +357,7 @@ void Socket::printf_vector_bytes(const std::vector<int> &vec, int length)
     std::cout << std::dec << std::endl; // 恢复十进制格式
 }
 // 打印 vector 中的前 count 个字节
-void Socket::printf_buffer_bytes(const std::vector<int> &vec, int length)
+void Socket::printf_buffer_bytes(const std::vector<uint8_t> &vec, int length)
 {
     // 确保打印的字节数不超过 vector 的大小
     int print_count = std::min(length, static_cast<int>(vec.size()));

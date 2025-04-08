@@ -37,14 +37,18 @@
 #include "../OTSM/octopus_carinfor.h"
 #include "../OTSM/octopus_ipc_socket.h"
 //////////////////////////////////////////////////////////////////////////////////////////////////////
+typedef int (*TaskManagerStateDoCommandFunc)(uint8_t *, uint8_t);
 
 typedef void (*TaskManagerStateRegistCallbackFunc)(CarInforCallback_t callback);
 typedef void (*TaskManagerStateStopRunningFunc)();
-typedef int (*TaskManagerStateDoCommandFunc)(uint8_t *, uint8_t);
+
+typedef void (*TaskManagerState_set_message_push_delay)(uint16_t delay_ms);
 
 TaskManagerStateStopRunningFunc taskManagerStateStopRunning = NULL;
 TaskManagerStateDoCommandFunc taskManagerStateDoCommand = NULL;
 TaskManagerStateRegistCallbackFunc taskManagerStateRegistCallbackFunc = NULL;
+
+TaskManagerState_set_message_push_delay ostsm_set_message_push_delay = NULL;
 
 typedef carinfo_meter_t *(*otsm_get_meter_info)();
 typedef carinfo_indicator_t *(*otsm_get_indicator_info)();
@@ -128,6 +132,29 @@ void update_client(int fd, bool new_flag)
         // 先取出原始值，修改后重新插入
         ClientInfo updated_client = *it;
         updated_client.flag = new_flag;
+
+        active_clients.erase(it);                         // 删除旧的
+        active_clients.insert(std::move(updated_client)); // 插入更新后的
+    }
+    else
+    {
+        std::cerr << "Client FD not found: " << fd << std::endl;
+    }
+}
+void update_client(int fd, const std::string &ip)
+{
+    std::lock_guard<std::mutex> lock(clients_mutex); // 线程安全
+
+    // 在集合中查找匹配的 `fd`
+    auto it = std::find_if(active_clients.begin(), active_clients.end(),
+                           [fd](const ClientInfo &client)
+                           { return client.fd == fd; });
+
+    if (it != active_clients.end())
+    {
+        // 先取出原始值，修改后重新插入
+        ClientInfo updated_client = *it;
+        updated_client.ip = ip;
 
         active_clients.erase(it);                         // 删除旧的
         active_clients.insert(std::move(updated_client)); // 插入更新后的
@@ -244,6 +271,14 @@ void initialize_otsm()
         return;
     }
 
+    ostsm_set_message_push_delay = (TaskManagerState_set_message_push_delay)dlsym(handle, "set_message_push_delay");
+    if (!ostsm_set_message_push_delay)
+    {
+        std::cerr << "Server Failed to find ostsm_set_message_push_delay: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
     get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
     if (!get_meter_info)
     {
@@ -330,20 +365,20 @@ int main()
 // Function to handle communication with a specific client
 void handle_client(int client_fd)
 {
-    std::cout << "Server handling client [" << client_fd << "]." << std::endl;
+    std::cout << "Server handling client [" << client_fd << "]..." << std::endl;
 
     // Buffers to hold the query and response data
-    std::vector<int> query_vector(IPC_SOCKET_QUERY_BUFFER_SIZE);
+    // std::vector<int> query_vector(IPC_SOCKET_QUERY_BUFFER_SIZE);
     int handle_result = 0;
 
     // Infinite loop to process client queries continuously
     while (true)
     {
         // Lock the server mutex to safely fetch the query data for the client
-        {
-            // Locking server_mutex ensures thread safety while accessing client query data
-            query_vector = server.get_query(client_fd);
-        }
+        //{
+        // Locking server_mutex ensures thread safety while accessing client query data
+        std::vector<uint8_t> query_vector = server.get_query(client_fd);
+        //}
 
         // If the query is empty (no data from client), break the loop and end the communication
         if (query_vector.empty())
@@ -356,15 +391,16 @@ void handle_client(int client_fd)
         DataMessage query_msg;
 
         // The first two fields in the protocol are group and msg (message type)
-        if (query_vector.size() >= 2)
+        if (query_vector.size() >= 5)
         {
             // Parse the group and msg fields from the query_vector and store them in the DataMessage
-            query_msg.group = static_cast<uint8_t>(query_vector[0]); // Parse group (message category)
-            query_msg.msg = static_cast<uint8_t>(query_vector[1]);   // Parse msg (command type)
+            query_msg.group = static_cast<uint8_t>(query_vector[2]); // Parse group (message category)
+            query_msg.msg = static_cast<uint8_t>(query_vector[3]);   // Parse msg (command type)
+            query_msg.length = static_cast<uint8_t>(query_vector[4]);
         }
 
         // The remaining elements in query_vector are considered as data
-        for (size_t i = 2; i < query_vector.size(); ++i)
+        for (size_t i = 5; i < query_vector.size(); ++i)
         {
             // Add data elements to the DataMessage's data field
             query_msg.data.push_back(static_cast<uint8_t>(query_vector[i]));
@@ -394,7 +430,7 @@ void handle_client(int client_fd)
         }
 
         // Log the result after handling the query
-        std::cout << "Server handling client [" << client_fd << "] cmd[" << query_vector[0] << "] done." << std::endl;
+        std::cout << "Server handling client [" << client_fd << "]" << "[" << query_msg.group << "]" << "[" << query_msg.msg << "] done." << std::endl;
     }
 
     // Close the client connection after finishing the interaction
@@ -412,15 +448,14 @@ void handle_client(int client_fd)
 int handle_help(int client_fd, const DataMessage &query_msg)
 {
     // Print the parsed DataMessage for debugging purposes
-    query_msg.print(); // Print the incoming query message for visibility
+    query_msg.print("Server help"); // Print the incoming query message for visibility
 
     // Prepare response vector with a predefined response code
     std::vector<int> resp_vector(1);
 
     // Optionally print active clients to log the current client activity
     print_active_clients();
-    std::cout << std::endl;
-
+    /// std::cout << std::endl;
     // Set the response message based on the protocol
     resp_vector[0] = MSG_GROUP_HELP; // Respond with predefined help information message
 
@@ -446,6 +481,17 @@ int handle_config(int client_fd, const DataMessage &query_msg)
         // Update client based on the first data value
         bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
         update_client(fd, is_active); // Update the client state (active/inactive)
+    }
+    else if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_PUSH_DELAY)
+    {
+        if (ostsm_set_message_push_delay)
+            ostsm_set_message_push_delay(MERGE_BYTES(query_msg.data[0], query_msg.data[1]));
+    }
+    else if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_IP)
+    {
+        // Update client based on the first data value
+        bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
+        update_client(fd, std::string(query_msg.data.begin(), query_msg.data.end())); // Update the client state (active/inactive)
     }
 
     // Log the current active clients
@@ -540,7 +586,7 @@ void send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, c
     DataMessage data_msg;
     data_msg.group = MSG_GROUP_CAR; // Set appropriate group based on the info type
     data_msg.msg = msg;             // Set message ID based on info type
-
+    data_msg.length = size;
     // Directly copy the car info data into the msg.data vector
     data_msg.data.clear(); // Clear any existing data
     data_msg.data.insert(data_msg.data.end(), reinterpret_cast<uint8_t *>(car_info), reinterpret_cast<uint8_t *>(car_info) + size);

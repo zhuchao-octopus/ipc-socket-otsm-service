@@ -157,3 +157,7 @@ void Logger::log_to_file(const std::string &message, const std::string &func_nam
              << message << std::endl;
     log_file.close();
 }
+
+void Logger::rotate() {
+
+}
