@@ -77,7 +77,7 @@ void RestartTickCounter(uint32_t *timer)
 	StartTickCounter(timer);
 }
 
-uint32_t GetTickCounter(const uint32_t *timer)
+uint32_t GetTickCounter(const uint32_t *timer) // ms
 {
 	uint32_t diff;
 	assert(timer != NULL);
@@ -141,7 +141,7 @@ void Date2tm(struct tm *pTM, const char *pData)
 	dataTimeTest[39] = 0;
 
 	tokenPtr = strtok(dataTimeTest, " ");
-	if (tokenPtr) // ����
+	if (tokenPtr)
 	{
 		strcpy(arrDate, tokenPtr);
 		tokenPtr = strtok(NULL, " ");
@@ -151,7 +151,6 @@ void Date2tm(struct tm *pTM, const char *pData)
 		}
 	}
 
-	// ����
 	tokenPtr = strtok(arrDate, ".");
 	if (tokenPtr)
 		timeInfo.tm_mday = atoi(tokenPtr);
@@ -162,7 +161,6 @@ void Date2tm(struct tm *pTM, const char *pData)
 	if (tokenPtr)
 		timeInfo.tm_year = atoi(tokenPtr);
 
-	// ʱ��
 	tokenPtr = strtok(arrTime, ":");
 	if (tokenPtr)
 		timeInfo.tm_hour = atoi(tokenPtr);

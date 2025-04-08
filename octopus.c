@@ -87,7 +87,7 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
     TaskManagerStateMachine_Id_ = 0; // Store the task ID in the global variable
     /// LOG_NONE("\r\n\r\n");//[1B blob data]
 #ifdef TASK_MANAGER_STATE_MACHINE_SOC
-    LOG_NONE("\r\n###################################BOOT  START###################################\r\n");
+    LOG_NONE("\r\n######################################BOOT  START######################################\r\n");
     TaskManagerStateStopRunning();
 #endif
     LOG_LEVEL("OTMS initialization task_id:%02x\r\n", TaskManagerStateMachine_Id_);
@@ -136,7 +136,7 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
     TaskManagerStateGoRunning();
 #endif
     /////////////////////////////////////////////////////////////////////////////////////////////////////
-    LOG_NONE("##################################BOOT COMPLETE##################################\r\n");
+    LOG_NONE("#####################################BOOT COMPLETE#####################################\r\n");
 }
 
 __attribute__((destructor)) void exit_cleanup()
