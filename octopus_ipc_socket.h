@@ -29,6 +29,12 @@
  ******************************************************************************/
 #include "octopus_platform.h"
 
+/*******************************************************************************
+ * MACROS
+ ******************************************************************************/
+#define CMD_GET_INDICATOR_INFO 100
+#define CMD_GET_METER_INFO 101
+#define CMD_GET_DRIVINFO_INFO 102
 #ifdef __cplusplus
 extern "C"
 {
@@ -39,12 +45,7 @@ extern "C"
      ******************************************************************************/
     // Define a type for the callback that accepts an integer
     typedef void (*CarInforCallback_t)(int cmd);
-    /*******************************************************************************
-    * MACROS
-    ******************************************************************************/
-    #define CMD_GET_INDICATOR_INFO 100
-    #define CMD_GET_METER_INFO 101
-    #define CMD_GET_DRIVINFO_INFO 102
+
     /*******************************************************************************
      * GLOBAL FUNCTIONS DECLARATION
      ******************************************************************************/
@@ -75,9 +76,12 @@ extern "C"
     void app_ipc_socket_post_running(void);
 
     void app_ipc_socket_stop_running(void);
-    
+
     int ipc_socket_doCommand(uint8_t *data, uint8_t length);
+
     void register_car_infor_callback(CarInforCallback_t callback);
+
+    void set_message_push_delay(uint16_t delay_ms);
 
 #ifdef __cplusplus
 }

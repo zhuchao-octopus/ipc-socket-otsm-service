@@ -59,6 +59,7 @@ static uint8_t l_u8_mpu_status = 0;    // Tracks the status of the MPU
 static uint8_t l_u8_power_off_req = 0; // Tracks if a power-off request is pending
 static uint32_t l_t_msg_wait_10_timer; // Timer for 10 ms message waiting period
 static uint32_t l_t_msg_wait_500_timer;
+static uint16_t l_t_callback_delay = 1000;
 /*******************************************************************************
  * Global Function Implementations
  ******************************************************************************/
@@ -119,8 +120,8 @@ void app_ipc_socket_running(void)
     if (msg->id == NO_MSG)
     {
         // if (GetTickCounter(&l_t_msg_wait_500_timer) >= 50)
-        //if (GetTickCounter(&l_t_msg_wait_500_timer) >= 1000*30)
-        if (GetTickCounter(&l_t_msg_wait_500_timer) >= 2000)
+        // if (GetTickCounter(&l_t_msg_wait_500_timer) >= 1000*30)
+        if ((GetTickCounter(&l_t_msg_wait_500_timer) >= l_t_callback_delay) && (l_t_callback_delay > 0))
         {
             notify_message_to_ipc_socket(CMD_GET_INDICATOR_INFO);
             // notify_message_to_ipc_socket(CMD_GET_METER_INFO);
@@ -153,6 +154,11 @@ void notify_message_to_ipc_socket(int cmd_parameter)
     {
         CarInforCallback(cmd_parameter);
     }
+}
+
+void set_message_push_delay(uint16_t delay_ms)
+{
+    l_t_callback_delay = delay_ms;
 }
 /*******************************************************************************
  * FUNCTION: ipc_socket_send_handler
