@@ -72,7 +72,7 @@ enum Message
 // DataMessage structure to represent the message format
 struct DataMessage
 {
-    static constexpr uint16_t HEADER = 0xA5A5;  // 固定的头码
+    static constexpr uint16_t _HEADER_ = 0xA5A5;  // 固定的头码
     uint16_t header;      // Header byte (e.g., a unique identifier for the message type)
     uint8_t group; // Message ID to differentiate modules or groups
     uint8_t msg;   // Command type for the message

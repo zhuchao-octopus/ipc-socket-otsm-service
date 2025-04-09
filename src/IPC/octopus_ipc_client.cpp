@@ -38,7 +38,7 @@ DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &or
     DataMessage data_msg;
     data_msg.group = 0; // Default group, can be modified or specified from parameters
     data_msg.msg = 0;
-
+    data_msg.length = 0;
     // Save the original argument strings
     for (int i = 0; i < argc; ++i)
     {

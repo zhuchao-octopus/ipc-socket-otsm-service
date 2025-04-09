@@ -112,9 +112,9 @@ void print_active_clients()
     std::lock_guard<std::mutex> lock(clients_mutex);
     for (const auto &client : active_clients)
     {
-        std::cout << "Client FD: " << client.fd
-                  << ", IP: " << client.ip
-                  << ", Flag: " << client.flag << std::endl;
+        std::cout << "Server client fd: " << client.fd
+                  << ", ip: " << client.ip
+                  << ", flag: " << client.flag << std::endl;
     }
 }
 
@@ -325,6 +325,7 @@ int main()
     LOG_CC("Octopus IPC Socket Server Started Successfully.");
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     initialize_otsm();
+    std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
     initialize_server();
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -338,6 +339,7 @@ int main()
         {
             std::cerr << "Server Failed to accept client connection" << std::endl;
             continue;
+            // break; for test
         }
 
         // Lock the clients mutex to safely modify the active clients set
@@ -363,86 +365,118 @@ int main()
 }
 
 // Function to handle communication with a specific client
+/**
+ * @brief Handles communication with a connected client socket.
+ *
+ * This function enters an infinite loop to continuously read and process queries
+ * from the connected client via the server's query interface. It parses the incoming
+ * messages according to the protocol, dispatches them to the appropriate handler functions,
+ * and gracefully shuts down the connection upon disconnection or error.
+ *
+ * @param client_fd The file descriptor of the connected client socket.
+ */
 void handle_client(int client_fd)
 {
-    std::cout << "Server handling client [" << client_fd << "]..." << std::endl;
+    std::cout << "Server handling client connection [" << client_fd << "]..." << std::endl;
 
-    // Buffers to hold the query and response data
-    // std::vector<int> query_vector(IPC_SOCKET_QUERY_BUFFER_SIZE);
     int handle_result = 0;
 
-    // Infinite loop to process client queries continuously
+    QueryResult query_result;
+    DataMessage query_msg;
+
+    // Main processing loop: handle client queries continuously
     while (true)
     {
-        // Lock the server mutex to safely fetch the query data for the client
-        //{
-        // Locking server_mutex ensures thread safety while accessing client query data
-        std::vector<uint8_t> query_vector = server.get_query(client_fd);
-        //}
+        // Try to fetch a query from the client using a thread-safe interface
+        query_result = server.get_query(client_fd);
 
-        // If the query is empty (no data from client), break the loop and end the communication
-        if (query_vector.empty())
+        // Check the status of the query attempt
+        switch (query_result.status)
         {
-            // Query is empty, so we terminate the loop
+        case QueryStatus::Timeout:
+            // No data received within timeout, continue waiting
+            //std::cout << "Server No data from client yet, waiting again..." << std::endl;
+            continue;
+
+        case QueryStatus::Success:
+            // Data received, proceed to process it
             break;
+
+        case QueryStatus::Disconnected:
+            // Client disconnected, exit loop and clean up
+            std::cout << "Server client [" << client_fd << "] disconnected." << std::endl;
+            [[fallthrough]];
+
+        case QueryStatus::Error:
+        default:
+            // Any other error or invalid socket state, terminate connection
+            std::cerr << "Server connection for client [" << client_fd << "] closing." << std::endl;
+            goto cleanup;
         }
 
-        // Create DataMessage object to hold the parsed query data
-        DataMessage query_msg;
-
-        // The first two fields in the protocol are group and msg (message type)
-        if (query_vector.size() >= 5)
+        // Verify the minimal size of a valid query message
+        if (query_result.data.size() < 5)
         {
-            // Parse the group and msg fields from the query_vector and store them in the DataMessage
-            query_msg.group = static_cast<uint8_t>(query_vector[2]); // Parse group (message category)
-            query_msg.msg = static_cast<uint8_t>(query_vector[3]);   // Parse msg (command type)
-            query_msg.length = static_cast<uint8_t>(query_vector[4]);
+            std::cerr << "Server invalid query size from client [" << client_fd << "]." << std::endl;
+            continue;
         }
 
-        // The remaining elements in query_vector are considered as data
-        for (size_t i = 5; i < query_vector.size(); ++i)
+        // Clear previous query_msg data and parse new message fields
+        query_msg = DataMessage();
+        query_msg.group = query_result.data[2];  // Group: functional category
+        query_msg.msg = query_result.data[3];    // Msg: specific command ID
+        query_msg.length = query_result.data[4]; // Length: expected data length
+
+        // Copy the actual payload starting from byte index 5
+        query_msg.data.assign(query_result.data.begin() + 5, query_result.data.end());
+
+        // Validate the packet before processing
+        if (!query_msg.is_valid_packet())
         {
-            // Add data elements to the DataMessage's data field
-            query_msg.data.push_back(static_cast<uint8_t>(query_vector[i]));
+            std::cerr << "Server Invalid packet received from client [" << client_fd << "]." << std::endl;
+            continue;
         }
 
-        // Perform the requested operation based on the group field in the DataMessage
+        // Dispatch to the appropriate handler based on group ID
         switch (query_msg.group)
         {
         case MSG_GROUP_HELP:
-            handle_result = handle_help(client_fd, query_msg); // Handle help command
+            handle_result = handle_help(client_fd, query_msg); // Help/info request
             break;
+
         case MSG_GROUP_SET:
-            handle_result = handle_config(client_fd, query_msg); // Handle configuration command
+            handle_result = handle_config(client_fd, query_msg); // Configuration command
             break;
-        case 2:                                                       // Placeholder for another command group
-        case 3:                                                       // Placeholder for another command group
-        case 4:                                                       // Placeholder for another command group
-            handle_result = handle_calculation(client_fd, query_msg); // Handle calculation command
+
+        case 2:
+        case 3:
+        case 4:
+            handle_result = handle_calculation(client_fd, query_msg); // Placeholder groups
             break;
+
         case MSG_GROUP_CAR:
-            handle_result = handle_car_infor(client_fd, query_msg); // Handle car-related info command
+            handle_result = handle_car_infor(client_fd, query_msg); // Vehicle info commands
             break;
+
         default:
-            // Default action when no known group is matched
-            handle_result = handle_help(client_fd, query_msg); // Respond with help info
+            // Unknown group, fallback to help
+            handle_result = handle_help(client_fd, query_msg);
             break;
         }
 
-        // Log the result after handling the query
-        std::cout << "Server handling client [" << client_fd << "]" << "[" << query_msg.group << "]" << "[" << query_msg.msg << "] done." << std::endl;
+        // Log success after handling the message
+        std::cout << "Server handled client [" << client_fd << "] "
+                  << "[Group: " << static_cast<int>(query_msg.group) << "] "
+                  << "[Msg: " << static_cast<int>(query_msg.msg) << "] done." << std::endl;
     }
 
-    // Close the client connection after finishing the interaction
+cleanup:
+
+    // Gracefully close the client socket and remove from active list
     close(client_fd);
+    remove_client(client_fd);
 
-    // Lock the clients mutex to safely remove the client from the active clients list
-    {
-        // Mutex is locked here to safely modify the active_clients list (if needed)
-        remove_client(client_fd); // Remove the client from active list
-    }
-
-    std::cout << "Server handling client [" << client_fd << "] closed." << std::endl;
+    std::cout << "Server connection for client [" << client_fd << "] closed." << std::endl;
 }
 
 int handle_help(int client_fd, const DataMessage &query_msg)

@@ -24,8 +24,8 @@ std::vector<uint8_t> DataMessage::serialize() const
     std::vector<uint8_t> serialized_data;
 
     // Add header (2 bytes)
-    serialized_data.push_back(static_cast<uint8_t>(HEADER >> 8));   // high byte of header
-    serialized_data.push_back(static_cast<uint8_t>(HEADER & 0xFF)); // low byte of header
+    serialized_data.push_back(static_cast<uint8_t>(_HEADER_ >> 8));   // high byte of header
+    serialized_data.push_back(static_cast<uint8_t>(_HEADER_ & 0xFF)); // low byte of header
 
     // Add group (1 byte)
     serialized_data.push_back(group);
@@ -67,7 +67,7 @@ DataMessage DataMessage::deserialize(const std::vector<uint8_t> &buffer)
 
 bool DataMessage::is_valid_packet()
 {
-    if (header != HEADER)
+    if (header != _HEADER_)
         return false;
 
     if (data.size() != length)
@@ -87,7 +87,8 @@ size_t DataMessage::get_total_packet_size() const
 }
 void DataMessage::print(std::string tag) const
 {
-    std::cout << tag << " - Header: 0x" << std::hex << header
+    std::cout << tag << " - Header: 0x" << std::hex << std::setw(2) << std::setfill('0')
+              << header
               << ", Group: 0x" << static_cast<int>(group)
               << ", Msg: 0x" << static_cast<int>(msg)
               << ", Length: " << std::dec << length

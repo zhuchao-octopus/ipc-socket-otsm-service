@@ -29,7 +29,7 @@
 #include <string>
 #include <sys/stat.h>
 #include <fcntl.h>
-
+#include <poll.h>
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////////////
 #define MAX_EVENTS 10 // Maximum number of events
@@ -37,7 +37,7 @@
 // Signal handler for server shutdown on interruption signals
 static void signal_handler(int signum)
 {
-    std::cout << "Octopus IPC Socket Received Signal: " << signum << std::endl;
+    std::cout << "Server Octopus IPC Socket Received Signal: " << signum << std::endl;
     std::exit(-1);
 }
 
@@ -76,7 +76,7 @@ int Socket::open_socket()
     if (socket_fd == -1)
     {
         int err = errno;
-        std::cerr << "Socket::open_socket() failed to create socket.\n"
+        std::cerr << "Socket: Open socket failed to create socket.\n"
                   << "Error: " << strerror(err) << " (errno: " << err << ")\n"
                   << "Domain: " << domain << ", Type: " << type << ", Protocol: " << protocol << std::endl;
         close_socket(); // Ensure socket is closed if creation fails
@@ -93,7 +93,7 @@ int Socket::open_socket(int domain, int type, int protocol)
     if (socket_fd == -1)
     {
         int err = errno;
-        std::cerr << "Socket::open_socket() failed to create socket.\n"
+        std::cerr << "Socket: Open socket failed to create socket.\n"
                   << "Error: " << strerror(err) << " (errno: " << err << ")\n"
                   << "Domain: " << domain << ", Type: " << type << ", Protocol: " << protocol << std::endl;
         close_socket(); // Ensure socket is closed if creation fails
@@ -107,8 +107,14 @@ int Socket::close_socket()
 {
     close(socket_fd); // Close the socket file descriptor
     if (socket_fd >= 0)
-        std::cout << "close socket [" << socket_fd << "]" << std::endl;
+        std::cout << "Socket: Close socket [" << socket_fd << "]" << std::endl;
     return socket_fd;
+}
+// Close the socket
+int Socket::close_socket(int client_fd)
+{
+    close(client_fd); // Close the socket file descriptor
+    return client_fd;
 }
 
 // Bind the server to the socket address
@@ -121,8 +127,8 @@ void Socket::bind_server_to_socket()
         close_socket();
     }
 
-    std::cout << "Server socket opened with [" << socket_fd << "] " << addr.sun_family << " domain" << std::endl;
-    std::cout << "Server socket opened with [" << socket_fd << "] " << addr.sun_path << " path" << std::endl;
+    std::cout << "Server Socket opened with [" << socket_fd << "] " << addr.sun_family << " domain" << std::endl;
+    std::cout << "Server Socket opened with [" << socket_fd << "] " << addr.sun_path << " path" << std::endl;
 
     // Set permissions for the socket file to allow clients to access
     int permission = chmod(socket_path, S_IRWXU | S_IRWXG | S_IRWXO);
@@ -157,26 +163,46 @@ int Socket::wait_and_accept()
     // Handle errors in accepting the connection
     if (client_fd == -1)
     {
-        std::cerr << "Server: Client connection could not be accepted." << std::endl;
+        std::cerr << "Server Client connection could not be accepted." << std::endl;
     }
 
-    std::cout << "Server accepted client connection [" << client_fd << "]" << std::endl;
+    std::cout << "Server Accepted client connection [" << client_fd << "]" << std::endl;
     return client_fd;
 }
 
 // Read the query from the client
-std::vector<uint8_t> Socket::get_query(int client_fd)
+QueryResult Socket::get_query(int client_fd)
 {
     char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];
-    int query_bytesRead = read(client_fd, buffer, sizeof(buffer));
+    struct pollfd pfd = {client_fd, POLLIN, 0};
 
-    if (query_bytesRead <= 0)
+    int ret = poll(&pfd, 1, 2000); // 2 秒超时
+
+    if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
     {
-        return {}; // Return empty vector on error or disconnection
+        //std::cerr << "Socket connection was closed by peer." << std::endl;
+        return {QueryStatus::Disconnected, {}};
     }
 
-    // Only copy the actual number of bytes read
-    return std::vector<uint8_t>(buffer, buffer + query_bytesRead);
+    if (ret == 0)
+    {
+        //std::cerr << "Socket poll timeout (no events)." << std::endl;
+        return {QueryStatus::Timeout, {}};
+    }
+    else if (ret < 0)
+    {
+        //std::cerr << "Socket poll error happened." << std::endl;
+        return {QueryStatus::Error, {}};
+    }
+
+    int query_bytesRead = read(client_fd, buffer, sizeof(buffer));
+    if (query_bytesRead <= 0)
+    {
+        //std::cerr << "Socket read failed or client disconnected." << std::endl;
+        return {QueryStatus::Disconnected, {}};
+    }
+
+    return {QueryStatus::Success, std::vector<uint8_t>(buffer, buffer + query_bytesRead)};
 }
 
 // Send a response to the client
@@ -243,12 +269,12 @@ int Socket::send_buff(int client_fd, char *resp_buffer, int length)
 // Connect the client to the server
 int Socket::connect_to_socket()
 {
-    std::cout << "Attempting to connect to server socket at: " << addr.sun_path << std::endl;
+    std::cout << "Socket: Attempting to connect to server socket at: " << addr.sun_path << std::endl;
     int result = connect(socket_fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_un));
     if (result == -1)
     {
         int err = errno;
-        std::cerr << "Socket::connect_to_socket() failed.\n"
+        std::cerr << "Socket Connect to server failed.\n"
                   << "Error: " << strerror(err) << " (errno: " << err << ")\n"
                   << "Socket FD: " << socket_fd << "\n"
                   << "Socket Path: " << addr.sun_path << "\n";
@@ -256,22 +282,22 @@ int Socket::connect_to_socket()
         // 如果是 ECONNREFUSED，可能是服务器未启动
         if (err == ECONNREFUSED)
         {
-            std::cerr << "Possible cause: The server socket is not running or has crashed.\n";
+            std::cerr << "Socket: Possible cause: The server socket is not running or has crashed.\n";
         }
         // 如果是 ENOENT，可能是 socket 文件不存在
         else if (err == ENOENT)
         {
-            std::cerr << "Possible cause: The socket file '" << addr.sun_path << "' does not exist.\n";
+            std::cerr << "Socket: Possible cause: The socket file '" << addr.sun_path << "' does not exist.\n";
         }
         // 如果是 EADDRINUSE，可能是 socket 被占用
         else if (err == EADDRINUSE)
         {
-            std::cerr << "Possible cause: The socket is already in use.\n";
+            std::cerr << "Socket: Possible cause: The socket is already in use.\n";
         }
         close(socket_fd); // 关闭 socket
         return -1;
     }
-    std::cout << "Successfully connected to server socket." << std::endl;
+    std::cout << "Socket: Successfully connected to server socket." << std::endl;
     return socket_fd;
 }
 
@@ -320,8 +346,8 @@ void Socket::send_query(const std::vector<uint8_t> &query_vector)
 // Receive the response from the server
 std::pair<std::vector<uint8_t>, int> Socket::get_response()
 {
-    ///std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Introduce a short delay
-    uint8_t result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                        // Buffer for the response
+    /// std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Introduce a short delay
+    uint8_t result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                     // Buffer for the response
     int resp_bytesRead = read(socket_fd, result_buffer, sizeof(result_buffer)); // Read the response
     // std::cout << "get_response " << resp_bytesRead <<"/"<< sizeof(result_buffer)<< std::endl; //
     //  Handle errors in receiving the response

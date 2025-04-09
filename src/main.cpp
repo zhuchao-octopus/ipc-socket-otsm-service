@@ -36,7 +36,7 @@ void app_ipc_socket_reesponse_callback(const DataMessage &query_msg, int size)
 void initialize_app_client()
 {
     // 加载共享库
-    std::cout << "App initialize oui." << std::endl;
+    std::cout << "App initialize app client library." << std::endl;
     handle = dlopen("libOAPPC.so", RTLD_LAZY);
     // handle = dlopen("libOTSM.so", RTLD_LAZY);
 
@@ -65,7 +65,7 @@ void cleanup()
     if (handle)
     {
         dlclose(handle);
-        std::cout << "App cleaned up oui library." << std::endl;
+        std::cout << "App cleaned up app client library." << std::endl;
     }
 }
 

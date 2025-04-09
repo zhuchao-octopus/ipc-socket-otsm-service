@@ -215,9 +215,9 @@ void invoke_notify_response(const DataMessage &query_msg, int size)
  */
 void reconnect_to_server()
 {
-    client.close_socket();
+    client.close_socket(socket_client.load());
     std::this_thread::sleep_for(std::chrono::seconds(2)); // Wait before reconnecting
-
+    //return;
     socket_client.store(client.open_socket(AF_UNIX, SOCK_STREAM, 0));
     socket_client.store(client.connect_to_socket("/tmp/octopus/ipc_socket"));
 
@@ -250,7 +250,7 @@ DataMessage check_complete_data_packet(std::vector<uint8_t> &buffer)
     while (buffer.size() >= 2)
     {
         uint16_t header = (buffer[0] << 8) | buffer[1];
-        if (header == query_msg.HEADER)
+        if (header == query_msg._HEADER_)
         {
             break; // Valid header found
         }
@@ -293,17 +293,19 @@ DataMessage check_complete_data_packet(std::vector<uint8_t> &buffer)
  */
 void receive_response_loop()
 {
+    std::vector<uint8_t> buffer; // Global buffer to hold incoming data
     std::string str = "octopus.ipc.app.client";
     std::vector<uint8_t> parameters(str.begin(), str.end());
-    app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_IP, parameters);
 
-    std::vector<uint8_t> buffer; // Global buffer to hold incoming data
+    std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
+    app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_IP, parameters);
+    // app_send_command(11, 100, {});
 
     while (running.load()) // Ensure atomic thread-safe check
     {
         if (socket_client.load() < 0)
         {
-            std::cerr << "App: No active connection. Attempting to reconnect...\n";
+            std::cerr << "App: No active connection, attempting to reconnect...\n";
             reconnect_to_server();
             continue;
         }
@@ -317,12 +319,12 @@ void receive_response_loop()
         {
             if (size == 0)
             {
-                std::cerr << "App: Connection closed by server. Reconnecting...\n";
+                std::cerr << "App: Connection closed by server, reconnecting...\n";
                 reconnect_to_server();
             }
             else if (size < 0)
             {
-                std::cerr << "App: Connection error (errno=" << errno << "). Reconnecting...\n";
+                std::cerr << "App: Connection error (errno=" << errno << "), reconnecting...\n";
                 reconnect_to_server();
             }
             continue;
@@ -369,10 +371,7 @@ void signal_handler(int signum)
 __attribute__((constructor)) void app_main()
 {
     signal(SIGINT, signal_handler); // Register signal handler for safe shutdown
-    // 重定向 stdout 到文件
-    freopen("/tmp/octopus_ipc_client.log", "w", stdout);
-    freopen("/tmp/octopus_ipc_client.log", "w", stderr);
-    //redirect_log_to_file();
+    redirect_log_to_file();
     app_init_threadpool();
 
     socket_client.store(client.open_socket(AF_UNIX, SOCK_STREAM, 0));
@@ -415,18 +414,18 @@ __attribute__((destructor)) void exit_cleanup()
 
 void redirect_log_to_file()
 {
+// 重定向 stdout 到文件
+#if 1
+    // freopen("/tmp/octopus_ipc_client.log", "w", stdout);
+    // freopen("/tmp/octopus_ipc_client.log", "w", stderr);
+#else
     // 打开日志文件，按追加模式写入
     std::ofstream log_file("/tmp/octopus_ipc_client.log", std::ios::app);
     // 保存原始的 std::cout 输出缓冲区
     std::streambuf *original_buffer = std::cout.rdbuf();
     // 将 std::cout 的输出重定向到文件
     std::cout.rdbuf(log_file.rdbuf());
-
-    // 现在所有通过 std::cout 输出的内容都会被写入文件
-    // std::cout << "This log is written to the file." << std::endl;
-    // 完成后恢复 std::cout 的输出到原始缓冲区
-    // std::cout.rdbuf(original_buffer);
-    // 可以选择不恢复原始缓冲区，若不恢复，将会持续重定向输出
+#endif
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////

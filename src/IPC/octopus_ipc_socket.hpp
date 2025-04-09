@@ -56,7 +56,19 @@ struct ClientInfo
         return fd == other.fd; // Compare based on fd (assuming it's unique)
     }
 };
+enum class QueryStatus
+{
+    Success,
+    Timeout,
+    Disconnected,
+    Error
+};
 
+struct QueryResult
+{
+    QueryStatus status;
+    std::vector<uint8_t> data;
+};
 // Custom hash function specialization for ClientInfo
 namespace std
 {
@@ -92,15 +104,16 @@ public:
     int open_socket(); // Open the socket
     int open_socket(int domain, int type, int protocol);
     int close_socket(); // Close the socket
+    int close_socket(int client_fd); // Close the socket
 
-    void bind_server_to_socket();                                    // Bind the socket to the specified address
-    void start_listening(); 
-                                             // Start listening for incoming client connections
+    void bind_server_to_socket(); // Bind the socket to the specified address
+    void start_listening();
+    // Start listening for incoming client connections
     int wait_and_accept();                                           // Wait for a client connection and accept it
     int send_response(int client_fd, std::vector<int> &resp_vector); // Send a response to the client
     int send_buff(int client_fd, char *resp_buffer, int length);
 
-    std::vector<uint8_t> get_query(int client_fd); // Retrieve the query from the client
+    QueryResult get_query(int client_fd); // Retrieve the query from the client
 
     // Client-side functions
     int connect_to_socket(); // Connect to the server socket

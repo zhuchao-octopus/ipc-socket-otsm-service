@@ -1,45 +1,51 @@
-# 定义源文件，排除可执行文件
+# Collect source files, excluding executables
 file(GLOB IPC_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/*.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/*.c
 )
 
-# 创建动态库 OIPC，排除 server 和 client
+# Remove server and client from the shared library source list
 list(REMOVE_ITEM IPC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_server.cpp)
 list(REMOVE_ITEM IPC_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_client.cpp)
 
-# 创建动态库 OIPC
+# Create shared library OIPC
 add_library(OIPC SHARED ${IPC_SOURCES})
 
-# 创建可执行文件 octopus_ipc_server
+# Create executable for server
 add_executable(octopus_ipc_server ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_server.cpp)
-# 创建可执行文件 octopus_ipc_client
+
+# Create executable for client
 add_executable(octopus_ipc_client ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_client.cpp)
 
-# 将 octopus_ipc_server 和 octopus_ipc_client 与 OIPC 库链接
+# Link executables with OIPC shared library
 target_link_libraries(octopus_ipc_server PRIVATE OIPC)
 target_link_libraries(octopus_ipc_client PRIVATE OIPC)
-target_link_libraries(octopus_ipc_server PRIVATE dl)
 
-# 让其他模块可以使用 OIPC 头文件
+# Link dl (dynamic linking) and pthread (thread library) for server
+target_link_libraries(octopus_ipc_server PRIVATE dl pthread)
+# Link pthread for client if it uses threads
+target_link_libraries(octopus_ipc_client PRIVATE pthread)
+
+# Link pthread to OIPC library if it uses threads internally
+target_link_libraries(OIPC PRIVATE pthread)
+
+# Make headers of OIPC visible to other modules
 target_include_directories(OIPC PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-# 设置 IPC 库的安装路径
+# Set install path for the OIPC library
 install(TARGETS OIPC DESTINATION /usr/local/lib)
 
-# 安装 IPC 头文件
+# Install IPC header files
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/
         DESTINATION /usr/local/include
         FILES_MATCHING PATTERN "*.hpp")
 
-# 设置可执行文件的安装路径
+# Install executables to /usr/local/bin
 install(TARGETS octopus_ipc_server octopus_ipc_client
         DESTINATION /usr/local/bin)
 
-# 安装服务文件
-install(
-    FILES ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_server.service
-    DESTINATION /etc/systemd/system
-)
-
-
+# Install systemd service file
+#install(
+#    FILES ${CMAKE_CURRENT_SOURCE_DIR}/octopus_ipc_server.service
+#    DESTINATION /etc/systemd/system
+#)
