@@ -1,3 +1,4 @@
+
 #ifndef OCTOPUS_IPC_PTL_HANDLER_HPP
 #define OCTOPUS_IPC_PTL_HANDLER_HPP
 
@@ -21,16 +22,14 @@
  * Date: [Date]
  * Version: 1.0
  */
-
-#include <iostream>
-#include <unordered_map>
+/// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #include <vector>
-
-#define MERGE_BYTES(byte1, byte2) ((static_cast<unsigned int>(byte1) << 8) | (static_cast<unsigned int>(byte2)))
-#define SPLIT_TO_BYTES(value, byte1, byte2)                  \
-    byte1 = static_cast<unsigned char>((value >> 8) & 0xFF); \
-    byte2 = static_cast<unsigned char>(value & 0xFF);
-
+#include <iostream>
+#include <iomanip>
+#include <stdexcept>
+/// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Message group definitions for IPC socket communication
 enum MessageGroup
 {
@@ -63,30 +62,6 @@ enum Message
     MSG_GET_INDICATOR_INFO = 100,
     MSG_GET_METER_INFO = 101,
     MSG_GET_DRIVINFO_INFO = 102
-};
-
-#define MSG_GROUP_HELP MSG_GROUP_0
-#define MSG_GROUP_SET MSG_GROUP_1
-#define MSG_GROUP_CAR MSG_GROUP_11
-
-// DataMessage structure to represent the message format
-struct DataMessage
-{
-    static constexpr uint16_t _HEADER_ = 0xA5A5;  // 固定的头码
-    uint16_t header;      // Header byte (e.g., a unique identifier for the message type)
-    uint8_t group; // Message ID to differentiate modules or groups
-    uint8_t msg;   // Command type for the message
-    uint16_t length;     // Length of the data (excluding header and length itself)
-    std::vector<uint8_t> data; // Array of data elements
-
-    // Serialize the DataMessage into a binary format for transmission
-    std::vector<uint8_t> serialize() const;
-
-    // Deserialize the binary data into a DataMessage structure
-    static DataMessage deserialize(const std::vector<uint8_t> &buffer);
-    bool is_valid_packet();
-    size_t get_total_packet_size() const;
-    void print(std::string tag) const;
 };
 
 // Function to get a human-readable string for a message group
@@ -150,5 +125,82 @@ inline const char *getMessageName(Message msg)
         return "Unknown Message";
     }
 }
+
+#define MERGE_BYTES(byte1, byte2) ((static_cast<unsigned int>(byte1) << 8) | (static_cast<unsigned int>(byte2)))
+
+#define SPLIT_TO_BYTES(value, byte1, byte2)                  \
+    byte1 = static_cast<unsigned char>((value >> 8) & 0xFF); \
+    byte2 = static_cast<unsigned char>(value & 0xFF);
+
+#define MSG_GROUP_HELP MSG_GROUP_0
+#define MSG_GROUP_SET MSG_GROUP_1
+#define MSG_GROUP_CAR MSG_GROUP_11
+/// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+class DataMessage
+{
+public:
+    // A constant for the fixed header value
+    static constexpr uint16_t _HEADER_ = 0xA5A5; ///< Fixed header value indicating the start of a message
+
+    uint16_t header;           ///< Header for identifying the message (usually fixed)
+    uint8_t group;             ///< Group ID for categorizing the message type
+    uint8_t msg;               ///< Message ID within the group
+    uint16_t length;            ///< Length of the data in the message (max 255)
+    std::vector<uint8_t> data; ///< Message data (content of the message)
+
+    /**
+     * @brief Default constructor for the DataMessage object.
+     *
+     * Initializes the header with the fixed HEADER value and other fields to 0.
+     */
+    DataMessage();
+  
+    DataMessage(const std::vector<uint8_t> &data_array);
+
+    DataMessage(uint8_t group, uint8_t msg, const std::vector<uint8_t>& data_array);  // Constructor declaration
+    /**
+     * @brief Serializes the DataMessage object into a byte vector.
+     *
+     * Converts the message into a binary format suitable for sending over a communication channel.
+     *
+     * @return std::vector<uint8_t> The serialized byte vector representation of the message.
+     */
+    std::vector<uint8_t> serializeMessage() const;
+
+    /**
+     * @brief Deserializes a byte vector into a DataMessage object.
+     *
+     * Converts a serialized byte array back into a DataMessage object, which represents the original message.
+     *
+     * @param buffer The byte vector containing the serialized message data.
+     * @return DataMessage The deserialized DataMessage object.
+     */
+    static DataMessage deserializeMessage(const std::vector<uint8_t> &buffer);
+
+    /**
+     * @brief Validates if the message has a valid structure.
+     *
+     * Checks that the message has a valid header, group ID, message ID, and data length.
+     *
+     * @return true if the message is valid, false otherwise.
+     */
+    bool isValid() const;
+
+    /**
+     * @brief Prints the contents of the DataMessage object.
+     *
+     * Outputs the message's header, group ID, message ID, length, and data in a human-readable format.
+     *
+     * @param tag A label to distinguish where the message is being printed from.
+     */
+    void printMessage(const std::string &tag) const;
+
+    size_t get_base_length() const;
+
+    size_t get_total_length() const; ///< Returns the total length of the serialized message (header + group + msg + length + data).
+    
+    size_t get_data_length() const; ///< Returns the length of the data portion of the message.
+};
 
 #endif // OCTOPUS_IPC_PTL_HANDLER_HPP

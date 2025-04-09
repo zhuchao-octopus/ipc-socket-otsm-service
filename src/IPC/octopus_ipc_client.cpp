@@ -49,7 +49,7 @@ DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &or
     if (argc < 3)
     {
         std::cerr << "Client: Error. No operation command or message ID provided!" << std::endl;
-        return data_msg;  // Return with default values
+        return data_msg; // Return with default values
     }
 
     // Find the operation code (group)
@@ -60,12 +60,12 @@ DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &or
     try
     {
         // Parse the message ID from argv[2]
-        data_msg.msg = static_cast<uint8_t>(std::stoul(argv[2]));  // Expecting message ID in the range of uint8_t (0-255)
+        data_msg.msg = static_cast<uint8_t>(std::stoul(argv[2])); // Expecting message ID in the range of uint8_t (0-255)
     }
     catch (const std::exception &e)
     {
         std::cerr << "Client: Error. Invalid message ID '" << argv[2] << "'. Using 0 instead.\n";
-        data_msg.msg = 0;  // Default to 0 if invalid
+        data_msg.msg = 0; // Default to 0 if invalid
     }
 
     // Parse the remaining arguments as uint8_t and add them to data
@@ -85,13 +85,12 @@ DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &or
         catch (const std::exception &e)
         {
             std::cerr << "Client: Warning. Cannot convert '" << argv[i] << "' to integer. Using 0 instead.\n";
-            data_msg.data.push_back(0);  // Add 0 if conversion fails
+            data_msg.data.push_back(0); // Add 0 if conversion fails
         }
     }
-
+    data_msg.length = static_cast<uint8_t>(data_msg.data.size());
     return data_msg;
 }
-
 
 int main(int argc, char *argv[])
 {
@@ -99,8 +98,13 @@ int main(int argc, char *argv[])
     int socket_client = -1;
     std::vector<std::string> original_arguments;
     DataMessage data_message = parse_arguments(argc, argv, original_arguments);
-    data_message.print("Client main");
+    data_message.printMessage("Client main");
 
+    if(!data_message.isValid())
+    {
+        std::cerr << "Client: Invalid message package!" << std::endl;
+        return 0;
+    }
     // 设置 SIGINT 信号处理
     signal(SIGINT, signal_handler);
 
@@ -119,7 +123,7 @@ int main(int argc, char *argv[])
             std::cout << "Client: Opened socket [" << socket_client << "] connected to server" << std::endl;
         }
 
-        std::vector<uint8_t> serialized_data = data_message.serialize();
+        std::vector<uint8_t> serialized_data = data_message.serializeMessage();
         client.send_query(serialized_data);
 
         std::pair<std::vector<uint8_t>, int> response_pair = client.get_response();

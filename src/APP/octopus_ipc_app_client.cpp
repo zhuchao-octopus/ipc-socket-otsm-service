@@ -121,10 +121,10 @@ void app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &quer
     query_msg.group = group;
     query_msg.msg = msg;
     query_msg.data = query_array;
+    query_msg.length = query_msg.data.size();
 
-    query_msg.print("Send query");
-
-    std::vector<uint8_t> serialized_data = query_msg.serialize();
+    query_msg.printMessage("Send query");
+    std::vector<uint8_t> serialized_data = query_msg.serializeMessage();
     client.send_query(serialized_data);
 }
 
@@ -147,8 +147,9 @@ void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &pa
     query_msg.group = group;
     query_msg.msg = msg;
     query_msg.data = parameters;
+    query_msg.length = query_msg.data.size();
 
-    std::vector<uint8_t> serialized_data = query_msg.serialize();
+    std::vector<uint8_t> serialized_data = query_msg.serializeMessage();
     client.send_query(serialized_data);
 }
 /**
@@ -217,7 +218,7 @@ void reconnect_to_server()
 {
     client.close_socket(socket_client.load());
     std::this_thread::sleep_for(std::chrono::seconds(2)); // Wait before reconnecting
-    //return;
+    // return;
     socket_client.store(client.open_socket(AF_UNIX, SOCK_STREAM, 0));
     socket_client.store(client.connect_to_socket("/tmp/octopus/ipc_socket"));
 
@@ -236,55 +237,64 @@ void reconnect_to_server()
 }
 
 // Function to check if data packet is complete
-DataMessage check_complete_data_packet(std::vector<uint8_t> &buffer)
+DataMessage check_complete_data_packet(std::vector<uint8_t> &buffer, DataMessage &query_msg)
 {
-    DataMessage query_msg;
+    // Reset to invalid state (used for isValid() check later)
     query_msg.group = -1;
     query_msg.msg = -1;
-    // Ensure there's enough data to process
-    if (buffer.size() < sizeof(uint16_t) + sizeof(uint8_t) * 3) // header + group + msg + length
+
+    const size_t baseLength = query_msg.get_base_length(); // Expected minimum size (header + group + msg + length)
+
+    // If buffer is too small to even contain the base structure, skip processing
+    if (buffer.size() < baseLength)
+        return query_msg;
+
+    // Scan the first max_scan bytes to find a valid header and trim junk before it
+    constexpr size_t max_scan = 20;
+    bool header_found = false;
+    for (size_t i = 0; i + 1 < buffer.size() && i < max_scan; ++i)
     {
-        return query_msg; // Return an empty DataMessage if not enough data
-    }
-    // Loop to find a valid header position in the buffer
-    while (buffer.size() >= 2)
-    {
-        uint16_t header = (buffer[0] << 8) | buffer[1];
+        uint16_t header = (buffer[i] << 8) | buffer[i + 1];
         if (header == query_msg._HEADER_)
         {
-            break; // Valid header found
+            if (i > 0)
+                buffer.erase(buffer.begin(), buffer.begin() + i); // Remove junk bytes before header
+            header_found = true;
+            break;
         }
-        else
-        {
-            buffer.erase(buffer.begin()); // Remove the first byte and try again
-        }
     }
 
-    if (buffer.size() < sizeof(uint16_t) + sizeof(uint8_t) * 3) // header + group + msg + length
+    // If no valid header found, erase scanned bytes to avoid buffer bloating
+    if (!header_found)
     {
-        return query_msg; // Return an empty DataMessage if not enough data
-    }
-    // Parse the header, group, and msg
-    query_msg.header = (buffer[0] << 8) | buffer[1]; // Assuming header is 2 bytes
-    query_msg.group = buffer[2];
-    query_msg.msg = buffer[3];
-
-    // Read the length of the data (assuming length is 1 byte)
-    query_msg.length = buffer[4];
-
-    // total package length
-    size_t packet_size = sizeof(uint16_t) + sizeof(uint8_t) * 3 + query_msg.length;
-    // Check if the buffer has enough data to form the full packet
-    if (buffer.size() < packet_size)
-    {
-        return query_msg; // Not enough data yet, return incomplete DataMessage
+        size_t remove_count = std::min(buffer.size(), max_scan);
+        buffer.erase(buffer.begin(), buffer.begin() + remove_count);
+        return query_msg;
     }
 
-    // Now extract the data from the buffer
-    query_msg.data.assign(buffer.begin() + 5, buffer.begin() + 5 + query_msg.length);
-    // Remove the processed data from the buffer
-    buffer.erase(buffer.begin(), buffer.begin() + packet_size); // Remove processed packet
-    return query_msg;                                           // Return the complete DataMessage
+    // Now that the header is aligned at buffer[0], ensure we can read the full base structure
+    if (buffer.size() < baseLength)
+        return query_msg;
+
+    // Peek into the buffer to get the length field only (without deserializing the full message)
+    uint16_t length = (static_cast<uint16_t>(buffer[4]) << 8) | buffer[5];
+    size_t totalLength = baseLength + length;
+
+    // If the buffer is still not large enough for the full message, wait for more data
+    if (buffer.size() < totalLength)
+        return query_msg;
+
+    // Now we have enough bytes, safely deserialize the message
+    query_msg = DataMessage::deserializeMessage(buffer);
+
+    // Verify integrity using isValid()
+    if (!query_msg.isValid())
+        return query_msg;
+
+    // Remove processed message from buffer
+    buffer.erase(buffer.begin(), buffer.begin() + totalLength);
+
+    return query_msg;
 }
 
 /**
@@ -332,16 +342,16 @@ void receive_response_loop()
 
         // Add the new response data to the global buffer
         buffer.insert(buffer.end(), response.begin(), response.end());
-
+        DataMessage query_msg;
         // Process the buffer for complete data packets
-        while (buffer.size() >= sizeof(uint16_t) + sizeof(uint8_t) * 3) // Ensure enough data for header + group + msg + length
+        while (buffer.size() >= query_msg.get_base_length()) // Ensure enough data for header + group + msg + length
         {
-            DataMessage query_msg = check_complete_data_packet(buffer);
+            query_msg = check_complete_data_packet(buffer, query_msg);
 
             // If we have a valid DataMessage
-            if (query_msg.is_valid_packet())
+            if (query_msg.isValid())
             {
-                invoke_notify_response(query_msg, query_msg.get_total_packet_size()); // Process the complete message
+                invoke_notify_response(query_msg, query_msg.get_total_length()); // Process the complete message
             }
             else
             {

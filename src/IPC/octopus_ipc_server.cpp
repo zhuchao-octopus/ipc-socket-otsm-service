@@ -395,7 +395,7 @@ void handle_client(int client_fd)
         {
         case QueryStatus::Timeout:
             // No data received within timeout, continue waiting
-            //std::cout << "Server No data from client yet, waiting again..." << std::endl;
+            // std::cout << "Server No data from client yet, waiting again..." << std::endl;
             continue;
 
         case QueryStatus::Success:
@@ -413,27 +413,17 @@ void handle_client(int client_fd)
             std::cerr << "Server connection for client [" << client_fd << "] closing." << std::endl;
             goto cleanup;
         }
-
-        // Verify the minimal size of a valid query message
-        if (query_result.data.size() < 5)
-        {
-            std::cerr << "Server invalid query size from client [" << client_fd << "]." << std::endl;
-            continue;
-        }
-
-        // Clear previous query_msg data and parse new message fields
-        query_msg = DataMessage();
-        query_msg.group = query_result.data[2];  // Group: functional category
-        query_msg.msg = query_result.data[3];    // Msg: specific command ID
-        query_msg.length = query_result.data[4]; // Length: expected data length
-
-        // Copy the actual payload starting from byte index 5
-        query_msg.data.assign(query_result.data.begin() + 5, query_result.data.end());
+        ////////////////////////////////////////////////////////////////////////////////////////////
+        ////////////////////////////////////////////////////////////////////////////////////////////
+        // Call the static function deserializeMessage of the DataMessage class, passing query_result.data byte data for deserialization,
+        // and assign the returned DataMessage object to the query_msg variable.
+        query_msg = DataMessage::deserializeMessage(query_result.data);
 
         // Validate the packet before processing
-        if (!query_msg.is_valid_packet())
+        if (!query_msg.isValid())
         {
             std::cerr << "Server Invalid packet received from client [" << client_fd << "]." << std::endl;
+            query_msg.printMessage("Server");
             continue;
         }
 
@@ -482,7 +472,7 @@ cleanup:
 int handle_help(int client_fd, const DataMessage &query_msg)
 {
     // Print the parsed DataMessage for debugging purposes
-    query_msg.print("Server help"); // Print the incoming query message for visibility
+    query_msg.printMessage("Server help"); // Print the incoming query message for visibility
 
     // Prepare response vector with a predefined response code
     std::vector<int> resp_vector(1);
@@ -620,13 +610,14 @@ void send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, c
     DataMessage data_msg;
     data_msg.group = MSG_GROUP_CAR; // Set appropriate group based on the info type
     data_msg.msg = msg;             // Set message ID based on info type
-    data_msg.length = size;
+
     // Directly copy the car info data into the msg.data vector
     data_msg.data.clear(); // Clear any existing data
     data_msg.data.insert(data_msg.data.end(), reinterpret_cast<uint8_t *>(car_info), reinterpret_cast<uint8_t *>(car_info) + size);
+    data_msg.length = data_msg.data.size();
 
     // Serialize the DataMessage into the protocol format
-    std::vector<uint8_t> serialized_data = data_msg.serialize();
+    std::vector<uint8_t> serialized_data = data_msg.serializeMessage();
     size_t data_size = serialized_data.size();
     char *buffer = reinterpret_cast<char *>(serialized_data.data());
 

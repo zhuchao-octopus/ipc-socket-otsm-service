@@ -30,7 +30,7 @@ void printf_vector_bytes(const std::vector<int> &vec, int length)
 void app_ipc_socket_reesponse_callback(const DataMessage &query_msg, int size)
 {
     //printf_vector_bytes(response, size);
-    query_msg.print("app callback");
+    query_msg.printMessage("app callback");
 }
 
 void initialize_app_client()
