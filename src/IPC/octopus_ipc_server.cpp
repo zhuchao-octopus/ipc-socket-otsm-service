@@ -81,6 +81,7 @@ std::mutex server_mutex;
 // Mutex for client operations to ensure thread-safety
 std::mutex clients_mutex;
 
+int socket_fd_server = -1;
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -168,68 +169,74 @@ void update_client(int fd, const std::string &ip)
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to ensure the directory for the socket file exists
-void ensure_directory_exists(const char *path)
+bool ensure_directory_exists(const char *path)
 {
+    if (!path || strlen(path) == 0)
+    {
+        std::cerr << "[EnsureDir] Invalid path." << std::endl;
+        return false;
+    }
+
     std::string dir = path;
     size_t pos = dir.find_last_of('/');
-
-    if (pos != std::string::npos)
+    if (pos == std::string::npos)
     {
-        std::string parent_dir = dir.substr(0, pos);
-        struct stat st;
+        std::cerr << "[EnsureDir] Path has no directory component." << std::endl;
+        return false;
+    }
 
-        // If the parent directory does not exist, create it
-        if (stat(parent_dir.c_str(), &st) == -1)
+    std::string parent_dir = dir.substr(0, pos);
+    struct stat st;
+
+    if (stat(parent_dir.c_str(), &st) == 0)
+    {
+        if (S_ISDIR(st.st_mode))
+            return true; // Directory already exists
+        else
         {
-            if (mkdir(parent_dir.c_str(), 0777) == -1)
-            {
-                std::cerr << "Failed to create directory: " << strerror(errno) << std::endl;
-            }
+            std::cerr << "[EnsureDir] Path exists but is not a directory." << std::endl;
+            return false;
         }
     }
+
+    // Try to create the directory (non-recursive)
+    if (mkdir(parent_dir.c_str(), 0777) == -1)
+    {
+        std::cerr << "[EnsureDir] Failed to create directory '" << parent_dir
+                  << "': " << strerror(errno) << std::endl;
+        return false;
+    }
+
+    return true;
 }
 
 // Function to remove the old socket file if it exists
-void remove_old_socket()
+void remove_old_socket_bind_file()
 {
     unlink(socket_path);
+}
+
+
+void CarInforNotify_Callback(int cmd_parameter)
+{
+    // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
+    for (const auto &client : active_clients)
+    {
+        /// std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
+        /// threads.push_back(std::move(notify_thread));
+        if (client.flag) // need push callback
+            notify_carInfor_to_client(client.fd, cmd_parameter);
+    }
 }
 
 // Signal handler for clean-up on interrupt (e.g., Ctrl+C)
 void signal_handler(int signum)
 {
     std::cout << "Server Interrupt signal received. Cleaning up...\n";
-    server.close_socket();
+    server.close_socket(socket_fd_server);
     if (taskManagerStateStopRunning)
         taskManagerStateStopRunning();
     exit(signum);
-}
-
-void initialize_server()
-{
-    std::cout << "Server initialize server started." << std::endl;
-    signal(SIGPIPE, SIG_IGN);
-    // Set up signal handler for SIGINT (Ctrl+C)
-    signal(SIGINT, signal_handler);
-
-    // Ensure the directory for the socket exists
-    ensure_directory_exists(socket_path);
-
-    // Remove old socket if it exists
-    remove_old_socket();
-
-    // Open and bind the server socket
-    server.open_socket();
-    server.bind_server_to_socket();
-
-    // Start listening for incoming client connections
-    server.start_listening();
-
-    // Set buffer sizes for query and response
-    // server.query_buffer_size = 20;
-    // server.respo_buffer_size = 20;
-
-    std::cout << "Server waiting for client connections..." << std::endl;
 }
 
 void initialize_otsm()
@@ -307,16 +314,54 @@ void initialize_otsm()
     /// initialize_func();
 }
 
-void CarInforNotify_Callback(int cmd_parameter)
+
+void initialize_server()
 {
-    // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
-    for (const auto &client : active_clients)
+    std::cout << "[Server] Initialization started." << std::endl;
+
+    // Ignore SIGPIPE to prevent crash when writing to a closed socket
+    signal(SIGPIPE, SIG_IGN);
+
+    // Handle Ctrl+C to allow graceful shutdown
+    signal(SIGINT, signal_handler);
+
+    // Ensure socket directory exists
+    if (!ensure_directory_exists(socket_path))
     {
-        /// std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
-        /// threads.push_back(std::move(notify_thread));
-        if (client.flag) // need push callback
-            notify_carInfor_to_client(client.fd, cmd_parameter);
+        std::cerr << "[Server] Failed to ensure socket directory exists." << std::endl;
+        return;
     }
+
+    // Clean up old socket file if it exists
+    remove_old_socket_bind_file();
+
+    // Create the server socket
+    socket_fd_server = server.open_socket();
+    if (socket_fd_server <= 0)
+    {
+        std::cerr << "[Server] Failed to create server socket." << std::endl;
+        return;
+    }
+
+    // Bind the socket
+    if (!server.bind_server_to_socket(socket_fd_server))
+    {
+        std::cerr << "[Server] Failed to bind server socket." << std::endl;
+        return;
+    }
+
+    // Begin listening for incoming connections
+    if (!server.start_listening(socket_fd_server))
+    {
+        std::cerr << "[Server] Failed to start listening." << std::endl;
+        return;
+    }
+
+    // Optional: set buffer sizes
+    // server.query_buffer_size = 20;
+    // server.respo_buffer_size = 20;
+
+    std::cout << "[Server] Waiting for client connections..." << std::endl;
 }
 
 int main()
@@ -332,7 +377,7 @@ int main()
     // Main loop to accept and handle client connections
     while (true)
     {
-        int client_fd = server.wait_and_accept();
+        int client_fd = server.wait_and_accept(socket_fd_server);
 
         // If accepting a client fails, continue to the next iteration
         if (client_fd < 0)
@@ -357,7 +402,7 @@ int main()
     }
 
     // Close the server socket before exiting
-    server.close_socket();
+    server.close_socket(socket_fd_server);
     if (taskManagerStateStopRunning)
         taskManagerStateStopRunning();
 
@@ -378,9 +423,7 @@ int main()
 void handle_client(int client_fd)
 {
     std::cout << "Server handling client connection [" << client_fd << "]..." << std::endl;
-
     int handle_result = 0;
-
     QueryResult query_result;
     DataMessage query_msg;
 
@@ -388,8 +431,8 @@ void handle_client(int client_fd)
     while (true)
     {
         // Try to fetch a query from the client using a thread-safe interface
+        // query_result = server.get_query_with_epoll(client_fd, 1000);
         query_result = server.get_query(client_fd);
-
         // Check the status of the query attempt
         switch (query_result.status)
         {
@@ -455,7 +498,7 @@ void handle_client(int client_fd)
         }
 
         // Log success after handling the message
-        std::cout << "Server handled client [" << client_fd << "] "
+        std::cout << "Server handling client [" << client_fd << "] "
                   << "[Group: " << static_cast<int>(query_msg.group) << "] "
                   << "[Msg: " << static_cast<int>(query_msg.msg) << "] done." << std::endl;
     }
@@ -465,7 +508,7 @@ cleanup:
     // Gracefully close the client socket and remove from active list
     close(client_fd);
     remove_client(client_fd);
-
+    // server.cleanup_on_disconnect(client_fd);not good
     std::cout << "Server connection for client [" << client_fd << "] closed." << std::endl;
 }
 
@@ -497,25 +540,30 @@ int handle_help(int client_fd, const DataMessage &query_msg)
 int handle_config(int client_fd, const DataMessage &query_msg)
 {
     // Extract the file descriptor from the query data or use the provided one
-    int fd = (query_msg.data.empty() || query_msg.data[0] <= 0) ? client_fd : query_msg.data[0];
+    int cfd = (query_msg.data.empty() || query_msg.data[0] <= 0) ? client_fd : query_msg.data[0];
 
     // If the message is related to IPC socket configuration, update the client status
     if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_FLAG)
     {
         // Update client based on the first data value
         bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
-        update_client(fd, is_active); // Update the client state (active/inactive)
+        update_client(cfd, is_active); // Update the client state (active/inactive)
+        std::cout << "Server set client [" << cfd << "] request push:" << is_active << std::endl;
     }
     else if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_PUSH_DELAY)
     {
         if (ostsm_set_message_push_delay)
-            ostsm_set_message_push_delay(MERGE_BYTES(query_msg.data[0], query_msg.data[1]));
+        {
+            int time_interval = query_msg.data[1] * 10; // MERGE_BYTES(query_msg.data[1], query_msg.data[2]);
+            std::cout << "Server set client [" << cfd << "] time interval:" << time_interval << std::endl;
+            ostsm_set_message_push_delay(time_interval);
+        }
     }
     else if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_IP)
     {
         // Update client based on the first data value
-        bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
-        update_client(fd, std::string(query_msg.data.begin(), query_msg.data.end())); // Update the client state (active/inactive)
+        // bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
+        update_client(cfd, std::string(query_msg.data.begin(), query_msg.data.end())); // Update the client state (active/inactive)
     }
 
     // Log the current active clients

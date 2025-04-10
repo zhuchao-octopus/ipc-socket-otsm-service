@@ -19,7 +19,7 @@
  * Date Time	: [2025/0313/21:00]
  */
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+#include <mutex>
 #include <iostream>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -87,40 +87,46 @@ class Socket
 {
 private:
     // Existing member variables
-    const char *socket_path;  // Path to the Unix domain socket
-    int socket_fd;            // Socket file descriptor
+    const char *socket_path; // Path to the Unix domain socket
+    // int socket_fd;          // Socket file descriptor
     int domain;               // Socket domain (AF_UNIX)
     int type;                 // Socket type (SOCK_STREAM)
     int protocol;             // Protocol used (0 for default)
     int max_waiting_requests; // Maximum number of pending requests
     sockaddr_un addr;         // Address for the socket
+    int epoll_fd;
+    std::mutex epoll_mutex;
+    bool epoll_initialized;
 
 public:
     // Existing methods
     Socket();
-    void init_socket_epoll();
+    void init_epoll(int socket_fd);
     void init_socket_structor();
 
     int open_socket(); // Open the socket
     int open_socket(int domain, int type, int protocol);
-    int close_socket(); // Close the socket
     int close_socket(int client_fd); // Close the socket
 
-    void bind_server_to_socket(); // Bind the socket to the specified address
-    void start_listening();
+    bool bind_server_to_socket(int socket_fd); // Bind the socket to the specified address
+    bool start_listening(int socket_fd);
     // Start listening for incoming client connections
-    int wait_and_accept();                                           // Wait for a client connection and accept it
-    int send_response(int client_fd, std::vector<int> &resp_vector); // Send a response to the client
-    int send_buff(int client_fd, char *resp_buffer, int length);
+    int wait_and_accept(int socket_fd);
+    // Wait for a client connection and accept it
+    int send_response(int socket_fd, std::vector<int> &resp_vector); // Send a response to the client
+    int send_buff(int socket_fd, char *resp_buffer, int length);
 
-    QueryResult get_query(int client_fd); // Retrieve the query from the client
-
+    QueryResult get_query(int socket_fd); // Retrieve the query from the client
+    QueryResult get_query_with_epoll(int socket_fd, int timeout_ms);
+    //////////////////////////////////////////////////////////////////////////////////////////////////////
     // Client-side functions
-    int connect_to_socket(); // Connect to the server socket
-    int connect_to_socket(std::string address);
-    void send_query(const std::vector<int> &query_vector); // Send a query to the server
-    void send_query(const std::vector<uint8_t> &query_vector);
-    std::pair<std::vector<uint8_t>, int> get_response(); // Retrieve the response from the server
+    int connect_to_socket(int socket_fd); // Connect to the server socket
+    int connect_to_socket(int socket_fd, std::string address);
+    bool send_query(int socket_fd, const std::vector<int> &query_vector); // Send a query to the server
+    bool send_query(int socket_fd, const std::vector<uint8_t> &query_vector);
+
+    QueryResult get_response(int socket_fd); // Retrieve the response from the server
+    QueryResult get_response_with_epoll(int socket_fd, int timeout_ms = 100);
 
     void printf_vector_bytes(const std::vector<uint8_t> &vec, int length);
     void printf_buffer_bytes(const std::vector<uint8_t> &vec, int length);

@@ -54,7 +54,7 @@ extern "C"
      */
     void exit_cleanup();
 
-    void start_request_push_data();
+    void start_request_push_data(bool requested);
 
 #ifdef __cplusplus
 }

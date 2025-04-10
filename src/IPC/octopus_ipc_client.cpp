@@ -11,7 +11,9 @@
  * Organization	: [octopus]
  * Date Time	: [2025/0313/21:00]
  */
-
+#include <iostream>
+#include <vector>
+#include <signal.h>
 #include <iomanip>
 #include <map>
 #include <algorithm>
@@ -32,7 +34,11 @@ void signal_handler(int signum)
     std::cout << "Client: Interrupt signal received. Cleaning up...\n";
     exit(signum);
 }
-
+// 负责信号处理的函数
+void setup_signal_handlers()
+{
+    signal(SIGINT, signal_handler);
+}
 DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &original_args)
 {
     DataMessage data_msg;
@@ -92,49 +98,83 @@ DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &or
     return data_msg;
 }
 
+// 负责处理和发送消息的功能
+bool send_message(Socket &client, int client_fd, const DataMessage &data_message)
+{
+    std::vector<uint8_t> serialized_data = data_message.serializeMessage();
+    if (!client.send_query(client_fd, serialized_data))
+    {
+        std::cerr << "Client: Failed to send query to server!" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// 负责连接和获取响应的功能
+bool connect_and_receive(Socket &client, int socket_fd)
+{
+    QueryResult queryResult = client.get_response(socket_fd);
+    if (queryResult.data.empty())
+    {
+        std::cerr << "Client: Received empty response from server!" << std::endl;
+        return false;
+    }
+    std::cout << "Client: Received response: ";
+    client.printf_vector_bytes(queryResult.data, queryResult.data.size());
+    return true;
+}
+
 int main(int argc, char *argv[])
 {
-    Socket client;
-    int socket_client = -1;
+    // Set up signal handler for SIGINT (Ctrl+C)
+    setup_signal_handlers();
+
+    // Parse command line arguments
     std::vector<std::string> original_arguments;
     DataMessage data_message = parse_arguments(argc, argv, original_arguments);
     data_message.printMessage("Client main");
 
-    if(!data_message.isValid())
+    // Validate parsed message
+    if (!data_message.isValid())
     {
         std::cerr << "Client: Invalid message package!" << std::endl;
-        return 0;
+        return 1; // Return non-zero code to indicate failure
     }
-    // 设置 SIGINT 信号处理
-    signal(SIGINT, signal_handler);
 
-    do
+    // Create client socket
+    Socket client;
+    int socket_fd = client.open_socket();
+    if (socket_fd < 0)
     {
-        socket_client = client.open_socket();
-        socket_client = client.connect_to_socket();
+        std::cerr << "Client: Failed to open socket!" << std::endl;
+        return 1; // Return non-zero code to indicate failure
+    }
 
-        if (socket_client < 0)
-        {
-            std::cerr << "Client: Invalid socket of connection" << std::endl;
-            break; // 替代 goto
-        }
-        else
-        {
-            std::cout << "Client: Opened socket [" << socket_client << "] connected to server" << std::endl;
-        }
+    // Attempt to connect to the server
+    int result = client.connect_to_socket(socket_fd);
+    if (result < 0)
+    {
+        std::cerr << "Client: Failed to connect to server!" << std::endl;
+        client.close_socket(socket_fd); // Ensure socket is closed before exiting
+        return 1;
+    }
+    std::cout << "Client: Opened socket [" << socket_fd << "] connected to server" << std::endl;
 
-        std::vector<uint8_t> serialized_data = data_message.serializeMessage();
-        client.send_query(serialized_data);
+    // Send the serialized data to the server
+    if (!send_message(client, socket_fd, data_message))
+    {
+        client.close_socket(socket_fd); // Ensure socket is closed on error
+        return 1;
+    }
 
-        std::pair<std::vector<uint8_t>, int> response_pair = client.get_response();
-        std::vector<uint8_t> response = response_pair.first;
-        int size = response_pair.second;
+    // Receive and print the response
+    if (!connect_and_receive(client, socket_fd))
+    {
+        client.close_socket(socket_fd); // Ensure socket is closed on error
+        return 1;
+    }
 
-        std::cout << "Client: Received response: ";
-        client.printf_vector_bytes(response, size);
-
-    } while (false); // 只执行一次，但支持 break 退出
-
-    client.close_socket();
+    // Clean up and close the socket
+    client.close_socket(socket_fd);
     return 0;
 }

@@ -18,7 +18,7 @@
 #include "../IPC/octopus_ipc_socket.hpp"
 #include "../IPC/octopus_ipc_threadpool.hpp" // 引入线程池头文件
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-void redirect_log_to_file();
+void ipc_redirect_log_to_file();
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Global variables
@@ -27,13 +27,17 @@ std::atomic<int> socket_client{-1}; // Stores socket descriptor
 std::thread receiver_thread;        // Thread handling incoming responses
 std::mutex callback_mutex;          // Mutex for callback synchronization
 Socket client;                      // IPC socket client instance
+
 // Initialize the global thread pool object
-ThreadPool g_thread_pool(4); // 4 threads in the pool
+OctopusThreadPool g_threadPool(4, 100, TaskOverflowStrategy::DropOldest);
+
+bool request_push_data = false;
 
 struct CallbackEntry
 {
     std::string func_name;
     OctopusAppResponseCallback cb;
+    int failure_count = 0;
 };
 
 std::list<CallbackEntry> g_named_callbacks;
@@ -52,26 +56,26 @@ bool is_process_running(const std::string &process_name)
     return found;
 }
 
-bool is_ipc_process_running(const std::string &process_name)
+bool is_ipc_socket_server_process_running(const std::string &process_name)
 {
     FILE *fp;
-    const size_t buffer_size = 1024;
-    char buffer[buffer_size]; // 分块读取
+    const size_t buffer_size = 500; // Increase buffer size to accommodate larger output
+    char buffer[buffer_size];       // Buffer to store process output
     bool found = false;
 
-    // 执行 ps 命令获取所有运行中的进程
+    // Open a pipe to run the ps command and get all processes
     fp = popen("ps aux", "r");
     if (fp == nullptr)
     {
-        /// std::cerr << "Failed to run ps command" << std::endl;
+        std::cerr << "Failed to run ps command" << std::endl;
         return false;
     }
 
-    // 分块读取 ps 命令输出的结果
+    // Read the output of ps command in chunks (buffer_size at a time)
     while (fread(buffer, 1, buffer_size, fp) > 0)
     {
-        // 查找每个块中是否包含指定进程路径
-        if (strstr(buffer, process_name.c_str()) != nullptr)
+        // Check the chunk for the process name, making sure to exclude the 'grep' command itself
+        if (strstr(buffer, process_name.c_str()) != nullptr && strstr(buffer, "grep") == nullptr)
         {
             found = true;
             break;
@@ -81,24 +85,53 @@ bool is_ipc_process_running(const std::string &process_name)
     fclose(fp);
     return found;
 }
-void start_process(const std::string &process_path)
+
+void start_process_as_server(const std::string &process_path)
 {
-    // 使用 system 调用启动进程
+    // Check if the process path exists
+    struct stat buffer;
+    if (stat(process_path.c_str(), &buffer) != 0)
+    {
+        // If the process path does not exist, print an error and return
+        std::cerr << "Client: Process path does not exist: " << process_path << std::endl;
+        return;
+    }
+    // Construct the shell command to start the process in the background
+    // Redirecting both stdout and stderr to the log file
+    // std::string command = process_path + " >> " + log_file + " 2>&1 &";
+    // Construct the shell command to start the process in the background with output redirection
+    //std::string command = "nohup " + process_path + " >> " + log_file + " 2>&1 &";
     std::string command = process_path + " >> " + log_file + " 2>&1 &";
-    // std::string command = process_path + " &"; // 在后台启动
+    // Print the command to debug
+    std::cout << "Client: Command to run - " << command << std::endl;
+    // Execute the system command to start the process
     int result = system(command.c_str());
+
+    // Check the result of the system command to see if the process was started successfully
     if (result == -1)
     {
-        std::cerr << "Client: Failed to start process: " << process_path << std::endl;
+        // If the system call fails, print an error message
+        std::cout << "Client: Failed to IPC Socket Server start process: " << process_path << std::endl;
     }
     else
     {
-        std::cout << "Client: Process started: " << process_path << std::endl;
+        // If the system call succeeds, print a success message
+        std::cout << "Client: IPC Socket Server process started: " << process_path << std::endl;
+        // Optionally, check if the process is running after a short delay
+        //sleep(1);                                                        // Wait for the process to start
+        //std::string ps_command = "ps aux | grep '" + process_path + "'"; // Using 'grep' to filter the output
+        //system(ps_command.c_str());                                      // Execute the ps command to check if the process is running
+        if(!is_ipc_socket_server_process_running(process_path))
+         {
+            std::cout << "Client: Bad Failed to start IPC Socket Server,restart " << process_path << std::endl;
+         }
     }
 }
 
-void app_init_threadpool()
+void ipc_init_threadpool()
 {
+    // g_threadPool = std::make_unique<OctopusThreadPool>(4, 100);
+    // g_threadPool.reset();
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -125,7 +158,7 @@ void app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &quer
 
     query_msg.printMessage("Send query");
     std::vector<uint8_t> serialized_data = query_msg.serializeMessage();
-    client.send_query(serialized_data);
+    client.send_query(socket_client.load(), serialized_data);
 }
 
 // Send a command to the server without additional data
@@ -147,10 +180,9 @@ void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &pa
     query_msg.group = group;
     query_msg.msg = msg;
     query_msg.data = parameters;
-    query_msg.length = query_msg.data.size();
 
     std::vector<uint8_t> serialized_data = query_msg.serializeMessage();
-    client.send_query(serialized_data);
+    client.send_query(socket_client.load(), serialized_data);
 }
 /**
  * @brief Registers a callback function to be invoked upon receiving a response.
@@ -162,7 +194,7 @@ void register_ipc_socket_callback(std::string func_name, OctopusAppResponseCallb
     {
         std::lock_guard<std::mutex> lock(callback_mutex);
         g_named_callbacks.push_back({func_name, callback});
-        LOG_CC("Registered callback: " + func_name);
+        LOG_CC("App: Registered callback: " + func_name);
     }
 }
 
@@ -178,8 +210,8 @@ void unregister_ipc_socket_callback(OctopusAppResponseCallback callback)
 
     if (it != g_named_callbacks.end())
     {
-        LOG_CC("Unregistered callback with function pointer"); // 输出日志
-        g_named_callbacks.erase(it, g_named_callbacks.end());  // 删除匹配的回调
+        LOG_CC("App: Unregistered callback with function pointer"); // 输出日志
+        g_named_callbacks.erase(it, g_named_callbacks.end());       // 删除匹配的回调
     }
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -192,47 +224,107 @@ void unregister_ipc_socket_callback(OctopusAppResponseCallback callback)
  */
 void invoke_notify_response(const DataMessage &query_msg, int size)
 {
-    std::lock_guard<std::mutex> lock(callback_mutex);
-    for (const auto &cb_entry : g_named_callbacks)
+    // 复制一份有效回调（值拷贝或智能指针）
+    std::vector<std::shared_ptr<CallbackEntry>> active_callbacks;
+
     {
+        std::lock_guard<std::mutex> lock(callback_mutex);
+        for (auto &entry : g_named_callbacks)
         {
-            g_thread_pool.enqueue([cb_entry, query_msg, size]()
-                                  {
-                try
-                {
-                    cb_entry.cb(query_msg, size);  // 执行回调
-                }
-                catch (const std::exception &e)
-                {
-                    LOG_CC("Exception during callback execution: " + std::string(e.what()));
-                } });
+            active_callbacks.emplace_back(std::make_shared<CallbackEntry>(entry)); // 深拷贝或用智能指针
         }
     }
-    g_thread_pool.print_pool_status(); /// 测试
+
+    constexpr int FAILURE_THRESHOLD = 3;
+
+    for (auto &entry_ptr : active_callbacks)
+    {
+        // 拷贝数据进入 lambda，确保线程安全
+        auto entry_copy = entry_ptr; // shared_ptr 捕获引用计数++
+        g_threadPool.enqueue([entry_copy, query_msg, size]()
+                             {
+            try
+            {
+                //一毫秒高频压力测试
+                //std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                entry_copy->cb(query_msg, size); // 执行回调
+            }
+            catch (const std::exception &e)
+            {
+                std::lock_guard<std::mutex> lock(callback_mutex);
+                entry_copy->failure_count++;
+                LOG_CC("Callback [" + entry_copy->func_name + "] exception: " + e.what());
+
+                if (entry_copy->failure_count >= FAILURE_THRESHOLD)
+                {
+                    LOG_CC("Removing callback [" + entry_copy->func_name + "] after " +
+                           std::to_string(entry_copy->failure_count) + " failures.");
+
+                    g_named_callbacks.remove_if([entry_copy](const CallbackEntry &cb) {
+                        return cb.func_name == entry_copy->func_name;
+                    });
+                }
+            }
+            catch (...)
+            {
+                std::lock_guard<std::mutex> lock(callback_mutex);
+                entry_copy->failure_count++;
+                LOG_CC("Callback [" + entry_copy->func_name + "] unknown exception.");
+
+                if (entry_copy->failure_count >= FAILURE_THRESHOLD)
+                {
+                    LOG_CC("Removing callback [" + entry_copy->func_name + "] after " +
+                           std::to_string(entry_copy->failure_count) + " failures.");
+
+                    g_named_callbacks.remove_if([entry_copy](const CallbackEntry &cb) {
+                        return cb.func_name == entry_copy->func_name;
+                    });
+                }
+            } });
+    }
+    // g_threadPool.print_pool_status(); // test
 }
 
 /**
  * @brief Attempts to reconnect to the server if the connection is lost.
  */
-void reconnect_to_server()
+void ipc_reconnect_to_server()
 {
-    client.close_socket(socket_client.load());
-    std::this_thread::sleep_for(std::chrono::seconds(2)); // Wait before reconnecting
-    // return;
-    socket_client.store(client.open_socket(AF_UNIX, SOCK_STREAM, 0));
-    socket_client.store(client.connect_to_socket("/tmp/octopus/ipc_socket"));
+    // Close the old connection
+    int socket_fd = socket_client.load();
+    client.close_socket(socket_fd);
+    std::this_thread::sleep_for(std::chrono::seconds(2)); // Wait for 2 seconds before reconnecting
 
-    if (socket_client.load() < 0)
+    // Try to reopen the socket and connect to the server
+    socket_fd = client.open_socket(AF_UNIX, SOCK_STREAM, 0);
+    if (socket_fd < 0)
+    {
+        std::cerr << "App: Failed to open socket. Retrying...\n";
+        return; // If opening the socket fails, exit the function without further operations
+    }
+
+    socket_client.store(socket_fd);
+
+    // Try to connect to the IPC server
+    int connect_result = client.connect_to_socket(socket_fd, "/tmp/octopus/ipc_socket");
+    if (connect_result < 0)
     {
         std::cerr << "App: Failed to reconnect to the server. Retrying...\n";
-        if (!is_ipc_process_running("octopus_ipc_server"))
+        // Check if the IPC process is running, if not, start the process
+        if (!is_ipc_socket_server_process_running("octopus_ipc_server"))
         {
-            start_process("/res/bin/octopus_ipc_server");
+            std::cout << "Client: Reconnect failed due to IPC server not running,Starting the server...\n";
+            start_process_as_server("/res/bin/octopus_ipc_server");
         }
     }
     else
     {
         std::cout << "App: Successfully reconnected to the server.\n";
+        // If data pushing is required, start the request to push data
+        if (request_push_data)
+        {
+            start_request_push_data(true);
+        }
     }
 }
 
@@ -301,66 +393,63 @@ DataMessage check_complete_data_packet(std::vector<uint8_t> &buffer, DataMessage
  * @brief Continuously listens for incoming responses from the server.
  * If the connection is lost, the client attempts to reconnect automatically.
  */
-void receive_response_loop()
+void ipc_receive_response_loop()
 {
     std::vector<uint8_t> buffer; // Global buffer to hold incoming data
     std::string str = "octopus.ipc.app.client";
     std::vector<uint8_t> parameters(str.begin(), str.end());
 
-    std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
-    app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_IP, parameters);
-    // app_send_command(11, 100, {});
-
+    //std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
+    //app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_IP, parameters);
+    std::cout << "[App] Start running ["<< running.load() <<"]...\n";
     while (running.load()) // Ensure atomic thread-safe check
     {
         if (socket_client.load() < 0)
         {
             std::cerr << "App: No active connection, attempting to reconnect...\n";
-            reconnect_to_server();
+            ipc_reconnect_to_server();
             continue;
         }
 
-        // Get response data
-        auto response_pair = client.get_response();
-        std::vector<uint8_t> response = response_pair.first;
-        int size = response_pair.second;
+        // Use epoll-based response method for efficient high-frequency polling
+        QueryResult result = client.get_response_with_epoll(socket_client, 200); // 100ms timeout
 
-        if (size <= 0)
+        switch (result.status)
         {
-            if (size == 0)
-            {
-                std::cerr << "App: Connection closed by server, reconnecting...\n";
-                reconnect_to_server();
-            }
-            else if (size < 0)
-            {
-                std::cerr << "App: Connection error (errno=" << errno << "), reconnecting...\n";
-                reconnect_to_server();
-            }
+        case QueryStatus::Success:
+            break; // Continue processing below
+        case QueryStatus::Timeout:
+            continue; // No data available yet, continue polling
+        case QueryStatus::Disconnected:
+            std::cerr << "App: Connection closed by server, reconnecting...\n";
+            ipc_reconnect_to_server();
+            continue;
+        case QueryStatus::Error:
+            std::cerr << "App: Connection error (errno=" << errno << "), reconnecting...\n";
+            ipc_reconnect_to_server();
             continue;
         }
 
-        // Add the new response data to the global buffer
-        buffer.insert(buffer.end(), response.begin(), response.end());
+        // Append received data to buffer
+        buffer.insert(buffer.end(), result.data.begin(), result.data.end());
         DataMessage query_msg;
-        // Process the buffer for complete data packets
-        while (buffer.size() >= query_msg.get_base_length()) // Ensure enough data for header + group + msg + length
+
+        // Extract and process complete packets
+        while (buffer.size() >= query_msg.get_base_length())
         {
             query_msg = check_complete_data_packet(buffer, query_msg);
 
-            // If we have a valid DataMessage
             if (query_msg.isValid())
             {
-                invoke_notify_response(query_msg, query_msg.get_total_length()); // Process the complete message
+                invoke_notify_response(query_msg, query_msg.get_total_length());
             }
             else
             {
-                // If no complete packet, break and wait for more data
-                break;
+                break; // Wait for more data
             }
         }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(50)); // Prevent excessive CPU usage
+        // Optional: reduce CPU load if desired (can be tuned or removed)
+        // std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 }
 
@@ -368,7 +457,7 @@ void receive_response_loop()
  * @brief Signal handler for cleaning up resources on interrupt signal (e.g., Ctrl+C).
  * @param signum The received signal number.
  */
-void signal_handler(int signum)
+void ipc_signal_handler(int signum)
 {
     std::cout << "Client: Interrupt signal received. Cleaning up...\n";
     exit_cleanup();
@@ -380,26 +469,56 @@ void signal_handler(int signum)
  */
 __attribute__((constructor)) void app_main()
 {
-    signal(SIGINT, signal_handler); // Register signal handler for safe shutdown
-    redirect_log_to_file();
-    app_init_threadpool();
+    // Register signal handler for SIGINT to safely shutdown the application when interrupt signal is received
+    signal(SIGINT, ipc_signal_handler);
 
-    socket_client.store(client.open_socket(AF_UNIX, SOCK_STREAM, 0));
-    socket_client.store(client.connect_to_socket("/tmp/octopus/ipc_socket"));
+    // Redirect application logs to a file for persistence and better debugging
+    ipc_redirect_log_to_file();
 
-    if (socket_client.load() < 0)
+    // Initialize the thread pool for handling asynchronous tasks in the background
+    ipc_init_threadpool();
+
+    // Attempt to open a Unix socket (AF_UNIX) with the specified protocol (SOCK_STREAM)
+    int fd = client.open_socket(AF_UNIX, SOCK_STREAM, 0);
+    socket_client.store(fd);
+
+    // Check if the socket was opened successfully
+    if (fd < 0)
     {
-        std::cerr << "App: Failed to establish connection with the server.\n";
-        client.close_socket();
-        // std::exit(-1);
-    }
-    else
-    {
-        std::cout << "App: Successfully connected to the server.\n";
+        std::cerr << "[App] Failed to open socket.\n"; // Log error if socket opening fails
+        return;                                        // Return early if socket couldn't be opened
     }
 
-    running.store(true);                                  // Set running flag to true
-    receiver_thread = std::thread(receive_response_loop); // Start response handling thread
+    if (!is_ipc_socket_server_process_running("octopus_ipc_server"))
+    {
+        std::cout << "Client: IPC server not running,Starting the server...\n";
+        start_process_as_server("/res/bin/octopus_ipc_server");
+    }
+
+    // Attempt to establish a connection with the server via the Unix socket
+    if (!client.connect_to_socket(fd, "/tmp/octopus/ipc_socket"))
+    {
+        std::cerr << "[App] Failed to connect to server.\n"; // Log error if connection fails
+        client.close_socket(fd);                             // Close the socket before returning
+        socket_client.store(-1);                             // Store an invalid socket file descriptor to indicate failure
+        return;                                              // Return early if the connection could not be established
+    }
+
+    std::cout << "[App] Successfully connected to server.\n"; // Log success when connection is established
+
+    // Attempt to initialize epoll for event-driven communication
+    client.init_epoll(fd);
+    // if (!client.init_epoll(fd))
+    //{
+    // std::cerr << "[App] Failed to initialize epoll.\n"; // Log error if epoll initialization fails
+    // client.close_socket(fd);                            // Close the socket before returning
+    // socket_client.store(-1);                            // Store an invalid socket file descriptor to indicate failure
+    // return;                                             // Return early if epoll initialization fails
+    //}
+
+    // Start a new thread to handle receiving responses asynchronously
+    running.store(true);                                  // Set the 'running' flag to true to indicate that the application is running
+    receiver_thread = std::thread(ipc_receive_response_loop); // Start the response handling thread
 }
 
 /**
@@ -414,7 +533,7 @@ __attribute__((destructor)) void exit_cleanup()
         return;
     }
 
-    client.close_socket();
+    client.close_socket(socket_client.load());
 
     if (receiver_thread.joinable())
     {
@@ -422,11 +541,11 @@ __attribute__((destructor)) void exit_cleanup()
     }
 }
 
-void redirect_log_to_file()
+void ipc_redirect_log_to_file()
 {
 // 重定向 stdout 到文件
 #if 1
-    // freopen("/tmp/octopus_ipc_client.log", "w", stdout);
+    freopen("/tmp/octopus_ipc_client.log", "w", stdout);
     // freopen("/tmp/octopus_ipc_client.log", "w", stderr);
 #else
     // 打开日志文件，按追加模式写入
@@ -440,8 +559,10 @@ void redirect_log_to_file()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void start_request_push_data()
+void start_request_push_data(bool requested)
 {
     // std::vector<uint8_t> parameters(str.begin(), str.end());
-    app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_FLAG, {0, 1});
+    request_push_data = requested;
+    if (request_push_data)
+        app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_FLAG, {0, 1});
 }

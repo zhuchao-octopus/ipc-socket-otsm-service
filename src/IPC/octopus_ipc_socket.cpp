@@ -48,7 +48,7 @@ Socket::Socket()
     signal(SIGINT, signal_handler);
     signal(SIGKILL, signal_handler);
     signal(SIGTERM, signal_handler);
-    socket_fd = -1;
+    // socket_fd = -1;
     // Server configuration
     max_waiting_requests = 10; // Max number of clients waiting to be served
     init_socket_structor();
@@ -67,10 +67,39 @@ void Socket::init_socket_structor()
     strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1); // Set socket path
 }
 
+void Socket::init_epoll(int socket_fd)
+{
+    std::lock_guard<std::mutex> lock(epoll_mutex);
+
+    if (!epoll_initialized)
+    {
+        epoll_fd = epoll_create1(0);
+        if (epoll_fd == -1)
+        {
+            std::cerr << "Socket: init_epoll epoll_create1 failed\n";
+            return;
+        }
+
+        epoll_event ev;
+        ev.events = EPOLLIN | EPOLLET; // Edge-triggered, read ready
+        ev.data.fd = socket_fd;
+
+        if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &ev) == -1)
+        {
+            std::cerr << "Socket: init_epoll epoll_ctl ADD failed\n";
+            close(epoll_fd);
+            epoll_fd = -1;
+            return;
+        }
+
+        epoll_initialized = true;
+    }
+}
+
 // Open a socket for communication
 int Socket::open_socket()
 {
-    socket_fd = socket(domain, type, protocol); // Create the socket
+    int socket_fd = socket(domain, type, protocol); // Create the socket
 
     // Error handling if socket creation fails
     if (socket_fd == -1)
@@ -79,7 +108,8 @@ int Socket::open_socket()
         std::cerr << "Socket: Open socket failed to create socket.\n"
                   << "Error: " << strerror(err) << " (errno: " << err << ")\n"
                   << "Domain: " << domain << ", Type: " << type << ", Protocol: " << protocol << std::endl;
-        close_socket(); // Ensure socket is closed if creation fails
+        close_socket(socket_fd); // Ensure socket is closed if creation fails
+        //  Don't call close_socket because socket_fd is invalid
     }
 
     return socket_fd;
@@ -87,7 +117,7 @@ int Socket::open_socket()
 
 int Socket::open_socket(int domain, int type, int protocol)
 {
-    socket_fd = socket(domain, type, protocol); // Create the socket
+    int socket_fd = socket(domain, type, protocol); // Create the socket
 
     // Error handling if socket creation fails
     if (socket_fd == -1)
@@ -96,51 +126,53 @@ int Socket::open_socket(int domain, int type, int protocol)
         std::cerr << "Socket: Open socket failed to create socket.\n"
                   << "Error: " << strerror(err) << " (errno: " << err << ")\n"
                   << "Domain: " << domain << ", Type: " << type << ", Protocol: " << protocol << std::endl;
-        close_socket(); // Ensure socket is closed if creation fails
+        // close_socket(); // Ensure socket is closed if creation fails
     }
 
     return socket_fd;
 }
 
 // Close the socket
-int Socket::close_socket()
+int Socket::close_socket(int socket_fd)
 {
     close(socket_fd); // Close the socket file descriptor
     if (socket_fd >= 0)
         std::cout << "Socket: Close socket [" << socket_fd << "]" << std::endl;
     return socket_fd;
 }
-// Close the socket
-int Socket::close_socket(int client_fd)
-{
-    close(client_fd); // Close the socket file descriptor
-    return client_fd;
-}
 
 // Bind the server to the socket address
-void Socket::bind_server_to_socket()
+bool Socket::bind_server_to_socket(int socket_fd)
 {
-    // Binding socket to the address
+    // Try binding the socket to the address
     if (bind(socket_fd, (sockaddr *)&addr, sizeof(addr)) == -1)
     {
-        std::cerr << "Server Socket could not be bound to socket." << std::endl;
-        close_socket();
+        int err = errno;
+        std::cerr << "Server Socket bind failed: " << strerror(err) << " (errno: " << err << ")" << std::endl;
+        close_socket(socket_fd);
+        return false;
     }
 
-    std::cout << "Server Socket opened with [" << socket_fd << "] " << addr.sun_family << " domain" << std::endl;
-    std::cout << "Server Socket opened with [" << socket_fd << "] " << addr.sun_path << " path" << std::endl;
+    std::cout << "Server Socket bound successfully." << std::endl;
+    std::cout << "Socket FD: " << socket_fd << ", Domain: " << addr.sun_family << std::endl;
+    std::cout << "Socket Path: " << addr.sun_path << std::endl;
 
-    // Set permissions for the socket file to allow clients to access
-    int permission = chmod(socket_path, S_IRWXU | S_IRWXG | S_IRWXO);
+    // Set file permissions (for Unix domain sockets)
+    int permission = chmod(addr.sun_path, S_IRWXU | S_IRWXG | S_IRWXO);
     if (permission == -1)
     {
-        std::cerr << "Server Socket file path could not give chmod permission to client." << std::endl;
-        close_socket();
+        int err = errno;
+        std::cerr << "Failed to chmod socket file: " << strerror(err) << " (errno: " << err << ")" << std::endl;
+        close_socket(socket_fd);
+        return false;
     }
+
+    std::cout << "Socket file permissions set successfully." << std::endl;
+    return true;
 }
 
 // Start the server to listen for incoming connections
-void Socket::start_listening()
+bool Socket::start_listening(int socket_fd)
 {
     std::cout << "Server started to listening." << std::endl;
 
@@ -150,12 +182,14 @@ void Socket::start_listening()
     if (listen_result == -1)
     {
         std::cerr << "Server Listen failed." << std::endl;
-        close_socket();
+        close_socket(socket_fd);
+        return false;
     }
+    return true;
 }
 
 // Accept an incoming client connection
-int Socket::wait_and_accept()
+int Socket::wait_and_accept(int socket_fd)
 {
     // Wait for a client to connect and accept the connection
     int client_fd = accept(socket_fd, NULL, NULL);
@@ -171,66 +205,114 @@ int Socket::wait_and_accept()
 }
 
 // Read the query from the client
-QueryResult Socket::get_query(int client_fd)
+QueryResult Socket::get_query(int socket_fd)
 {
     char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];
-    struct pollfd pfd = {client_fd, POLLIN, 0};
+    struct pollfd pfd = {socket_fd, POLLIN, 0};
 
     int ret = poll(&pfd, 1, 2000); // 2 秒超时
 
     if (pfd.revents & (POLLHUP | POLLERR | POLLNVAL))
     {
-        //std::cerr << "Socket connection was closed by peer." << std::endl;
+        // std::cerr << "Socket connection was closed by peer." << std::endl;
         return {QueryStatus::Disconnected, {}};
     }
 
     if (ret == 0)
     {
-        //std::cerr << "Socket poll timeout (no events)." << std::endl;
+        // std::cerr << "Socket poll timeout (no events)." << std::endl;
         return {QueryStatus::Timeout, {}};
     }
     else if (ret < 0)
     {
-        //std::cerr << "Socket poll error happened." << std::endl;
+        // std::cerr << "Socket poll error happened." << std::endl;
         return {QueryStatus::Error, {}};
     }
 
-    int query_bytesRead = read(client_fd, buffer, sizeof(buffer));
+    int query_bytesRead = read(socket_fd, buffer, sizeof(buffer));
     if (query_bytesRead <= 0)
     {
-        //std::cerr << "Socket read failed or client disconnected." << std::endl;
+        // std::cerr << "Socket read failed or client disconnected." << std::endl;
         return {QueryStatus::Disconnected, {}};
     }
 
     return {QueryStatus::Success, std::vector<uint8_t>(buffer, buffer + query_bytesRead)};
 }
 
+// Updated function to use epoll for handling client queries
+QueryResult Socket::get_query_with_epoll(int socket_fd, int timeout_ms)
+{
+    init_epoll(socket_fd); // Lazy init for epoll_fd
+
+    if (epoll_fd == -1)
+    {
+        return {QueryStatus::Error, {}};
+    }
+
+    epoll_event events[1];
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = socket_fd;
+
+    // Add client socket to epoll
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &ev) == -1)
+    {
+        return {QueryStatus::Error, {}};
+    }
+
+    // Wait for events on the socket with a timeout of 2000ms
+    int n = epoll_wait(epoll_fd, events, 1, 2000);
+    if (n == -1)
+    {
+        return {QueryStatus::Error, {}};
+    }
+    else if (n == 0)
+    {
+        return {QueryStatus::Timeout, {}};
+    }
+
+    // Check if we have a readable event
+    if (events[0].events & EPOLLIN)
+    {
+        char buffer[IPC_SOCKET_QUERY_BUFFER_SIZE];
+        int query_bytesRead = read(socket_fd, buffer, sizeof(buffer));
+        if (query_bytesRead <= 0)
+        {
+            return {QueryStatus::Disconnected, {}};
+        }
+
+        return {QueryStatus::Success, std::vector<uint8_t>(buffer, buffer + query_bytesRead)};
+    }
+
+    return {QueryStatus::Error, {}};
+}
+
 // Send a response to the client
-int Socket::send_response(int client_fd, std::vector<int> &resp_vector)
+int Socket::send_response(int socket_fd, std::vector<int> &resp_vector)
 {
     char resp_buffer[resp_vector.size()]; // Buffer for the response
     for (int i = 0; i < resp_vector.size(); i++)
     {
         resp_buffer[i] = resp_vector[i];
     }
-    auto write_result = write(client_fd, resp_buffer, sizeof(resp_buffer)); // Send the response
+    auto write_result = write(socket_fd, resp_buffer, sizeof(resp_buffer)); // Send the response
 
     // Handle errors in sending the response
     if (write_result == -1)
     {
         std::cerr << "Server Could not write response to client." << std::endl;
-        close_socket();
+        close_socket(socket_fd);
     }
 
     return 0;
 }
 // Send a response to the client
-int Socket::send_buff(int client_fd, char *resp_buffer, int length)
+int Socket::send_buff(int socket_fd, char *resp_buffer, int length)
 {
     int total_sent = 0;
     while (total_sent < length)
     {
-        ssize_t write_result = write(client_fd, resp_buffer + total_sent, length - total_sent);
+        ssize_t write_result = write(socket_fd, resp_buffer + total_sent, length - total_sent);
         // ssize_t write_result = send(client_fd, resp_buffer, length, MSG_NOSIGNAL);
         if (write_result > 0)
         {
@@ -251,8 +333,8 @@ int Socket::send_buff(int client_fd, char *resp_buffer, int length)
             else if (errno == EPIPE || errno == ECONNRESET)
             {
                 std::cerr << "Socket: Client disconnected, closing connection..." << std::endl;
-                close(client_fd); // 关闭该客户端的 socket，防止资源泄漏
-                return -1;        // 终止发送
+                close_socket(socket_fd); // 关闭该客户端的 socket，防止资源泄漏
+                return -1;               // 终止发送
             }
             else
             {
@@ -267,7 +349,7 @@ int Socket::send_buff(int client_fd, char *resp_buffer, int length)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Connect the client to the server
-int Socket::connect_to_socket()
+int Socket::connect_to_socket(int socket_fd)
 {
     std::cout << "Socket: Attempting to connect to server socket at: " << addr.sun_path << std::endl;
     int result = connect(socket_fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_un));
@@ -279,38 +361,44 @@ int Socket::connect_to_socket()
                   << "Socket FD: " << socket_fd << "\n"
                   << "Socket Path: " << addr.sun_path << "\n";
 
-        // 如果是 ECONNREFUSED，可能是服务器未启动
-        if (err == ECONNREFUSED)
+        // Handle specific error codes
+        switch (err)
         {
+        case ECONNREFUSED:
             std::cerr << "Socket: Possible cause: The server socket is not running or has crashed.\n";
-        }
-        // 如果是 ENOENT，可能是 socket 文件不存在
-        else if (err == ENOENT)
-        {
+            break;
+
+        case ENOENT:
             std::cerr << "Socket: Possible cause: The socket file '" << addr.sun_path << "' does not exist.\n";
-        }
-        // 如果是 EADDRINUSE，可能是 socket 被占用
-        else if (err == EADDRINUSE)
-        {
+            break;
+
+        case EADDRINUSE:
             std::cerr << "Socket: Possible cause: The socket is already in use.\n";
+            break;
+
+        default:
+            std::cerr << "Socket: Unknown error occurred.\n";
+            break;
         }
-        close(socket_fd); // 关闭 socket
+
+        // Close the socket to prevent resource leak
+        close_socket(socket_fd);
         return -1;
     }
     std::cout << "Socket: Successfully connected to server socket." << std::endl;
-    return socket_fd;
+    return result;
 }
 
-int Socket::connect_to_socket(std::string address)
+int Socket::connect_to_socket(int socket_fd, std::string address)
 {
     // 设置 socket_path 为新的 address
     this->socket_path = address.c_str();
     init_socket_structor();
-    return this->connect_to_socket();
+    return this->connect_to_socket(socket_fd);
 }
 
 // Send a query from the client to the server
-void Socket::send_query(const std::vector<int> &query_vector)
+bool Socket::send_query(int socket_fd, const std::vector<int> &query_vector)
 {
     char query_buffer[query_vector.size()]; // Buffer for the query
     for (int i = 0; i < query_vector.size(); i++)
@@ -323,11 +411,13 @@ void Socket::send_query(const std::vector<int> &query_vector)
     if (write_result == -1)
     {
         std::cerr << "Client: Could not write query to socket." << std::endl;
-        close_socket();
+        close_socket(socket_fd);
+        return false;
     }
+    return true;
 }
 
-void Socket::send_query(const std::vector<uint8_t> &query_vector)
+bool Socket::send_query(int socket_fd, const std::vector<uint8_t> &query_vector)
 {
     char query_buffer[query_vector.size()]; // Buffer for the query
     for (int i = 0; i < query_vector.size(); i++)
@@ -340,32 +430,64 @@ void Socket::send_query(const std::vector<uint8_t> &query_vector)
     if (write_result == -1)
     {
         std::cerr << "Client: Could not write query to socket." << std::endl;
-        close_socket();
+        close_socket(socket_fd);
+        return false;
     }
+    return true;
 }
 // Receive the response from the server
-std::pair<std::vector<uint8_t>, int> Socket::get_response()
+QueryResult Socket::get_response(int socket_fd)
 {
-    /// std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Introduce a short delay
-    uint8_t result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];                     // Buffer for the response
-    int resp_bytesRead = read(socket_fd, result_buffer, sizeof(result_buffer)); // Read the response
-    // std::cout << "get_response " << resp_bytesRead <<"/"<< sizeof(result_buffer)<< std::endl; //
-    //  Handle errors in receiving the response
-    if (resp_bytesRead == -1)
+    uint8_t result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];
+
+    int resp_bytesRead = read(socket_fd, result_buffer, sizeof(result_buffer));
+    if (resp_bytesRead <= 0)
     {
         std::cerr << "Client: Could not read response from server." << std::endl;
-        close_socket();
-        return {{}, 0}; // Return an empty vector with size 0
+        close_socket(socket_fd);
+        return {QueryStatus::Disconnected, {}};
     }
 
-    // Convert the response buffer into a vector of integers (only the valid received bytes)
-    std::vector<uint8_t> result_vec(resp_bytesRead);
-    for (int i = 0; i < resp_bytesRead; i++)
+    // Efficient conversion without loop
+    std::vector<uint8_t> data(result_buffer, result_buffer + resp_bytesRead);
+    return {QueryStatus::Success, data};
+}
+
+QueryResult Socket::get_response_with_epoll(int socket_fd, int timeout_ms)
+{
+    init_epoll(socket_fd); // Lazy init
+    if (epoll_fd == -1)
     {
-        result_vec[i] = static_cast<uint8_t>(result_buffer[i]); // Ensure proper unsigned conversion
+        return {QueryStatus::Error, {}};
     }
 
-    return {result_vec, resp_bytesRead}; // Return the received data and size
+    epoll_event events[1];
+
+    int n = epoll_wait(epoll_fd, events, 1, timeout_ms);
+    if (n == -1)
+    {
+        return {QueryStatus::Error, {}};
+    }
+    else if (n == 0)
+    {
+        return {QueryStatus::Timeout, {}};
+    }
+
+    if (!(events[0].events & EPOLLIN))
+    {
+        return {QueryStatus::Error, {}};
+    }
+
+    uint8_t result_buffer[IPC_SOCKET_RESPONSE_BUFFER_SIZE];
+    int bytesRead = read(socket_fd, result_buffer, sizeof(result_buffer));
+
+    if (bytesRead <= 0)
+    {
+        return {QueryStatus::Disconnected, {}};
+    }
+
+    std::vector<uint8_t> data(result_buffer, result_buffer + bytesRead);
+    return {QueryStatus::Success, data};
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
