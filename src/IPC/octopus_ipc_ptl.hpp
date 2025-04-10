@@ -52,7 +52,7 @@ enum MessageGroup
 };
 
 // Individual message definitions
-enum Message
+enum Message_Cmd_Id
 {
     MSG_GET_HELP_INFO = 0,
     MSG_IPC_SOCKET_CONFIG_FLAG = 50,
@@ -107,7 +107,7 @@ inline const char *getMessageGroupName(MessageGroup group)
 }
 
 // Function to get a human-readable string for a message
-inline const char *getMessageName(Message msg)
+inline const char *getMessageName(Message_Cmd_Id msg)
 {
     switch (msg)
     {

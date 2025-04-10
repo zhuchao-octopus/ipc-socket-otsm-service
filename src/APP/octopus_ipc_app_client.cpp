@@ -100,7 +100,7 @@ void start_process_as_server(const std::string &process_path)
     // Redirecting both stdout and stderr to the log file
     // std::string command = process_path + " >> " + log_file + " 2>&1 &";
     // Construct the shell command to start the process in the background with output redirection
-    //std::string command = "nohup " + process_path + " >> " + log_file + " 2>&1 &";
+    // std::string command = "nohup " + process_path + " >> " + log_file + " 2>&1 &";
     std::string command = process_path + " >> " + log_file + " 2>&1 &";
     // Print the command to debug
     std::cout << "Client: Command to run - " << command << std::endl;
@@ -118,13 +118,13 @@ void start_process_as_server(const std::string &process_path)
         // If the system call succeeds, print a success message
         std::cout << "Client: IPC Socket Server process started: " << process_path << std::endl;
         // Optionally, check if the process is running after a short delay
-        //sleep(1);                                                        // Wait for the process to start
-        //std::string ps_command = "ps aux | grep '" + process_path + "'"; // Using 'grep' to filter the output
-        //system(ps_command.c_str());                                      // Execute the ps command to check if the process is running
-        if(!is_ipc_socket_server_process_running(process_path))
-         {
+        // sleep(1);                                                        // Wait for the process to start
+        // std::string ps_command = "ps aux | grep '" + process_path + "'"; // Using 'grep' to filter the output
+        // system(ps_command.c_str());                                      // Execute the ps command to check if the process is running
+        if (!is_ipc_socket_server_process_running(process_path))
+        {
             std::cout << "Client: Bad Failed to start IPC Socket Server,restart " << process_path << std::endl;
-         }
+        }
     }
 }
 
@@ -198,22 +198,43 @@ void register_ipc_socket_callback(std::string func_name, OctopusAppResponseCallb
     }
 }
 
+/**
+ * @brief Unregisters a previously registered IPC callback function.
+ *
+ * This function safely removes a callback from the global callback list
+ * by comparing function pointer addresses. It uses a mutex to ensure thread safety.
+ * Additionally, logs the function name and pointer address of the callback being unregistered.
+ *
+ * @param callback The function pointer of the callback to be unregistered.
+ */
 void unregister_ipc_socket_callback(OctopusAppResponseCallback callback)
 {
-    std::lock_guard<std::mutex> lock(callback_mutex); // 锁定，确保线程安全
-    // 使用 std::remove_if 和 lambda 表达式根据回调函数指针删除
+    // Lock the callback list to ensure thread safety
+    std::lock_guard<std::mutex> lock(callback_mutex);
+
+    // Use std::remove_if to find all entries matching the given callback
     auto it = std::remove_if(g_named_callbacks.begin(), g_named_callbacks.end(),
                              [callback](const CallbackEntry &entry)
                              {
-                                 return entry.cb == callback; // 比较回调函数指针
+                                 return entry.cb == callback;
                              });
 
     if (it != g_named_callbacks.end())
     {
-        LOG_CC("App: Unregistered callback with function pointer"); // 输出日志
-        g_named_callbacks.erase(it, g_named_callbacks.end());       // 删除匹配的回调
+        // Log each unregistered callback's name and address
+        for (auto iter = it; iter != g_named_callbacks.end(); ++iter)
+        {
+            std::ostringstream oss;
+            oss << "App: Unregistered callback: name=" << iter->func_name
+                << ", address=" << reinterpret_cast<const void *>(iter->cb);
+            LOG_CC(oss.str());
+        }
+
+        // Erase all matching entries from the callback list
+        g_named_callbacks.erase(it, g_named_callbacks.end());
     }
 }
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -399,9 +420,9 @@ void ipc_receive_response_loop()
     std::string str = "octopus.ipc.app.client";
     std::vector<uint8_t> parameters(str.begin(), str.end());
 
-    //std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
-    //app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_IP, parameters);
-    std::cout << "[App] Start running ["<< running.load() <<"]...\n";
+    // std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
+    // app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_IP, parameters);
+    std::cout << "[App] Start running [" << running.load() << "]...\n";
     while (running.load()) // Ensure atomic thread-safe check
     {
         if (socket_client.load() < 0)
@@ -517,7 +538,7 @@ __attribute__((constructor)) void app_main()
     //}
 
     // Start a new thread to handle receiving responses asynchronously
-    running.store(true);                                  // Set the 'running' flag to true to indicate that the application is running
+    running.store(true);                                      // Set the 'running' flag to true to indicate that the application is running
     receiver_thread = std::thread(ipc_receive_response_loop); // Start the response handling thread
 }
 

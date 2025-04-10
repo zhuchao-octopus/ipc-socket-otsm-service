@@ -12,21 +12,37 @@
 // [INFO] [2025-03-14 12:34:56] System started successfully
 
 #include <octopus_logger.hpp>
-#include <iostream>
-#include <chrono>
-#include <iomanip>
-#include <ctime>
-#include <string>
-#include <fstream>
 
-// Logs a message with a TAG and timestamp (with microseconds precision)
-void Logger::log(const std::string &tag, const std::string &message, const std::string &func_name)
+std::mutex Logger::log_mutex;
+LogLevel Logger::current_level = LOG_DEBUG; // Default log level
+bool Logger::is_is_log_to_file = false;     // By default, don't log to file
+
+const char *Logger::levelToString(LogLevel level)
+{
+    switch (level)
+    {
+    case LOG_NONE:
+        return "NONE";
+    case LOG_ERROR:
+        return "ERROR";
+    case LOG_WARN:
+        return "WARN";
+    case LOG_INFO:
+        return "INFO";
+    case LOG_DEBUG:
+        return "DEBUG";
+    case LOG_TRACE:
+        return "TRACE";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+// Helper function to get the current timestamp with microsecond precision
+std::string Logger::get_timestamp()
 {
     auto now = std::chrono::system_clock::now();
     auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    // Default to __func__ if no func_name is provided
-    std::string function_name = func_name.empty() ? __func__ : func_name;
-
     std::tm buf;
     localtime_r(&in_time_t, &buf); // Get local time
 
@@ -35,129 +51,95 @@ void Logger::log(const std::string &tag, const std::string &message, const std::
     auto milliseconds = microseconds / 1000;
     auto micros = microseconds % 1000;
 
-    std::cout << "[" << tag << "] "
-              << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "."
+    std::ostringstream timestamp;
+    timestamp << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "."
               << std::setw(3) << std::setfill('0') << milliseconds % 1000 << "." // milliseconds
-              << std::setw(3) << std::setfill('0') << micros << "] "
-              << "[" << function_name << "] " // Function name
-              << message << std::endl;
+              << std::setw(3) << std::setfill('0') << micros;                    // microseconds
+    return timestamp.str();
 }
 
-// Logs a message without a TAG (default TAG: "OINFOR")
-void Logger::log(const std::string &message, const std::string &func_name)
+bool Logger::shouldLog(LogLevel level)
 {
-    auto now = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    // Default to __func__ if no func_name is provided
+    return static_cast<int>(level) <= static_cast<int>(current_level);
+}
+
+// Set the current log level. Only logs at or above this level will be logged.
+void Logger::set_level(LogLevel level)
+{
+    current_level = level;
+}
+
+// Enable or disable file logging
+void Logger::enable_file_output(bool enable)
+{
+    is_is_log_to_file = enable;
+}
+
+void Logger::write_log(const std::string &full_message)
+{
+    std::lock_guard<std::mutex> lock(log_mutex);
+    std::cout << full_message << std::endl;
+    if (is_is_log_to_file)
+    {
+        write_to_file(full_message);
+    }
+}
+
+void Logger::write_to_file(const std::string &full_message)
+{
+    std::ofstream log_file("octopus.log", std::ios::app);
+    if (log_file.is_open())
+    {
+        log_file << full_message << std::endl;
+    }
+}
+
+void Logger::log(LogLevel level, const std::string &tag, const std::string &message, const std::string &func_name)
+{
+    if (!shouldLog(level))
+        return;
     std::string function_name = func_name.empty() ? __func__ : func_name;
-    std::tm buf;
-    localtime_r(&in_time_t, &buf); // Get local time
+    std::string timestamp = get_timestamp();
 
-    auto duration = now.time_since_epoch();
-    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-    auto milliseconds = microseconds / 1000;
-    auto micros = microseconds % 1000;
+    std::ostringstream log_message;
+    log_message << "[" << tag << "] "
+                << "[" << timestamp << "] "
+                << "[" << function_name << "] "
+                << message;
 
-    std::cout << "[OINFOR] "
-              << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "."
-              << std::setw(3) << std::setfill('0') << milliseconds % 1000 << "." // milliseconds
-              << std::setw(3) << std::setfill('0') << micros << "] "
-              << "[" << function_name << "] " // Function name
-              << message << std::endl;
+    write_log(log_message.str());
 }
 
-// Logs a message with timestamp accurate to microseconds
-void Logger::log_with_microseconds(const std::string &tag, const std::string &message)
+void Logger::log(LogLevel level, const std::string &message, const std::string &func_name)
 {
-    auto now = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(now);
-
-    std::tm buf;
-    localtime_r(&in_time_t, &buf); // Get local time
-
-    auto duration = now.time_since_epoch();
-    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-    auto milliseconds = microseconds / 1000;
-    auto micros = microseconds % 1000;
-
-    std::cout << "[" << tag << "] "
-              << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "."
-              << std::setw(3) << std::setfill('0') << milliseconds % 1000 << "." // milliseconds
-              << std::setw(3) << std::setfill('0') << micros << "] "
-              << message << std::endl;
+    if (!shouldLog(level))
+        return;
+    log(level, "OINFOR", message, func_name);
 }
 
-// Logs a message with timestamp accurate to microseconds without a TAG (default TAG: "OINFOR")
-void Logger::log_with_microseconds(const std::string &message)
+void Logger::log_to_file(LogLevel level, const std::string &tag, const std::string &message, const std::string &func_name)
 {
-    auto now = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(now);
-
-    std::tm buf;
-    localtime_r(&in_time_t, &buf); // Get local time
-
-    auto duration = now.time_since_epoch();
-    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-    auto milliseconds = microseconds / 1000;
-    auto micros = microseconds % 1000;
-
-    std::cout << "[OINFOR] "
-              << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "."
-              << std::setw(3) << std::setfill('0') << milliseconds % 1000 << "." // milliseconds
-              << std::setw(3) << std::setfill('0') << micros << "] "
-              << message << std::endl;
-}
-
-// Logs a message to a file with a TAG
-void Logger::log_to_file(const std::string &tag, const std::string &message, const std::string &func_name)
-{
-    std::ofstream log_file("app.log", std::ios::app);
-    auto now = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    // Default to __func__ if no func_name is provided
+    if (!shouldLog(level))
+        return;
     std::string function_name = func_name.empty() ? __func__ : func_name;
-    std::tm buf;
-    localtime_r(&in_time_t, &buf); // Get local time
+    std::string timestamp = get_timestamp();
 
-    auto duration = now.time_since_epoch();
-    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-    auto milliseconds = microseconds / 1000;
-    auto micros = microseconds % 1000;
+    std::ostringstream log_message;
+    log_message << "[" << tag << "] "
+                << "[" << timestamp << "] "
+                << "[" << function_name << "] "
+                << message;
 
-    log_file << "[" << tag << "] "
-             << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "."
-             << std::setw(3) << std::setfill('0') << milliseconds % 1000 << "." // milliseconds
-             << std::setw(3) << std::setfill('0') << micros << "] "
-             << "[" << function_name << "] " // Function name
-             << message << std::endl;
-    log_file.close();
+    write_to_file(log_message.str());
 }
 
-// Logs a message to a file without a TAG (default TAG: "OINFOR")
-void Logger::log_to_file(const std::string &message, const std::string &func_name)
+void Logger::log_to_file(LogLevel level, const std::string &message, const std::string &func_name)
 {
-    std::ofstream log_file("app.log", std::ios::app);
-    auto now = std::chrono::system_clock::now();
-    auto in_time_t = std::chrono::system_clock::to_time_t(now);
-    // Default to __func__ if no func_name is provided
-    std::string function_name = func_name.empty() ? __func__ : func_name;
-    std::tm buf;
-    localtime_r(&in_time_t, &buf); // Get local time
-
-    auto duration = now.time_since_epoch();
-    auto microseconds = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-    auto milliseconds = microseconds / 1000;
-    auto micros = microseconds % 1000;
-
-    log_file << "[OINFOR] "
-             << "[" << std::put_time(&buf, "%Y-%m-%d %H:%M:%S") << "."
-             << std::setw(3) << std::setfill('0') << milliseconds % 1000 << "." // milliseconds
-             << std::setw(3) << std::setfill('0') << micros << "] "
-             << "[" << function_name << "] " // Function name
-             << message << std::endl;
-    log_file.close();
+    if (!shouldLog(level))
+        return;
+    log_to_file(level, "OINFOR", message, func_name);
 }
 
-void Logger::rotate() {
-
+void Logger::rotate()
+{
 }

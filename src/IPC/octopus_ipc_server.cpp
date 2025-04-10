@@ -82,12 +82,14 @@ std::mutex server_mutex;
 std::mutex clients_mutex;
 
 int socket_fd_server = -1;
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Thread-safe unordered set for active clients
 std::unordered_set<ClientInfo> active_clients;
 
+bool ipc_socket_server_debug_print_data = false;
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
 // **Thread-Safe Functions**
 void add_client(int fd, const std::string &ip, bool flag)
 {
@@ -216,7 +218,6 @@ void remove_old_socket_bind_file()
     unlink(socket_path);
 }
 
-
 void CarInforNotify_Callback(int cmd_parameter)
 {
     // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
@@ -314,7 +315,6 @@ void initialize_otsm()
     /// initialize_func();
 }
 
-
 void initialize_server()
 {
     std::cout << "[Server] Initialization started." << std::endl;
@@ -361,7 +361,7 @@ void initialize_server()
     // server.query_buffer_size = 20;
     // server.respo_buffer_size = 20;
 
-    std::cout << "[Server] Waiting for client connections..." << std::endl;
+    std::cout << "Server Waiting for client connections..." << std::endl;
 }
 
 int main()
@@ -522,7 +522,10 @@ int handle_help(int client_fd, const DataMessage &query_msg)
 
     // Optionally print active clients to log the current client activity
     print_active_clients();
-    /// std::cout << std::endl;
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    if ((query_msg.data.empty() || query_msg.data[0] == 1))
+        ipc_socket_server_debug_print_data = true;
+    //////////////////////////////////////////////////////////////////////////////////////////////
     // Set the response message based on the protocol
     resp_vector[0] = MSG_GROUP_HELP; // Respond with predefined help information message
 
@@ -671,7 +674,11 @@ void send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, c
 
     // Print the buffer contents for debugging
     std::cout << "Server handling client [" << client_fd << "] " << info_type << " " << data_size << " bytes: ";
-    server.printf_buffer_bytes(buffer, data_size);
+
+    if (ipc_socket_server_debug_print_data)
+    {
+        server.printf_buffer_bytes(buffer, data_size);
+    }
     // Lock the server mutex to safely send the response to the client
     {
         std::lock_guard<std::mutex> lock(server_mutex);
