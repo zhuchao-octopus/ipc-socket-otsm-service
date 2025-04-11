@@ -672,11 +672,10 @@ void send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, c
     size_t data_size = serialized_data.size();
     char *buffer = reinterpret_cast<char *>(serialized_data.data());
 
-    // Print the buffer contents for debugging
-    std::cout << "Server handling client [" << client_fd << "] " << info_type << " " << data_size << " bytes: ";
-
     if (ipc_socket_server_debug_print_data)
     {
+        // Print the buffer contents for debugging
+        std::cout << "Server handling client [" << client_fd << "] " << info_type << " " << data_size << " bytes: ";
         server.printf_buffer_bytes(buffer, data_size);
     }
     // Lock the server mutex to safely send the response to the client
