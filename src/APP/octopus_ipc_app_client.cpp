@@ -21,12 +21,16 @@
 void ipc_redirect_log_to_file();
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+const std::string ipc_server_path_name = "/res/bin/octopus_ipc_server";
+const std::string ipc_server_name = "octopus_ipc_server";
+const std::string ipc_socket_path_name = "/tmp/octopus/ipc_socket";
+
 // Global variables
-std::atomic<bool> running{true};    // Controls the receiving loop
-std::atomic<int> socket_client{-1}; // Stores socket descriptor
-std::thread receiver_thread;        // Thread handling incoming responses
-std::mutex callback_mutex;          // Mutex for callback synchronization
-Socket client;                      // IPC socket client instance
+std::atomic<bool> socket_running{true}; // Controls the receiving loop
+std::atomic<int> socket_client{-1};     // Stores socket descriptor
+std::thread ipc_receiver_thread;        // Thread handling incoming responses
+std::mutex callback_mutex;              // Mutex for callback synchronization
+Socket client;                          // IPC socket client instance
 
 // Initialize the global thread pool object
 OctopusThreadPool g_threadPool(4, 100, TaskOverflowStrategy::DropOldest);
@@ -41,9 +45,15 @@ struct CallbackEntry
 };
 
 std::list<CallbackEntry> g_named_callbacks;
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+// Create an instance of the message bus
+OctopusMessageBus messageBus;
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+bool file_exists_and_executable(const std::string &path)
+{
+    return access(path.c_str(), X_OK) == 0;
+}
 bool is_process_running(const std::string &process_name)
 {
     FILE *fp = popen(("pidof " + process_name).c_str(), "r");
@@ -327,15 +337,15 @@ void ipc_reconnect_to_server()
     socket_client.store(socket_fd);
 
     // Try to connect to the IPC server
-    int connect_result = client.connect_to_socket(socket_fd, "/tmp/octopus/ipc_socket");
+    int connect_result = client.connect_to_socket(socket_fd, ipc_socket_path_name);
     if (connect_result < 0)
     {
         std::cerr << "App: Failed to reconnect to the server. Retrying...\n";
         // Check if the IPC process is running, if not, start the process
-        if (!is_ipc_socket_server_process_running("octopus_ipc_server"))
+        if (!is_ipc_socket_server_process_running(ipc_server_name))
         {
             std::cout << "Client: Reconnect failed due to IPC server not running,Starting the server...\n";
-            start_process_as_server("/res/bin/octopus_ipc_server");
+            start_process_as_server(ipc_server_path_name);
         }
     }
     else
@@ -422,8 +432,8 @@ void ipc_receive_response_loop()
 
     // std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
     // app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_IP, parameters);
-    std::cout << "[App] Start running [" << running.load() << "]...\n";
-    while (running.load()) // Ensure atomic thread-safe check
+    std::cout << "[App] Start running [" << socket_running.load() << "]...\n";
+    while (socket_running.load()) // Ensure atomic thread-safe check
     {
         if (socket_client.load() < 0)
         {
@@ -499,6 +509,13 @@ __attribute__((constructor)) void app_main()
     // Initialize the thread pool for handling asynchronous tasks in the background
     ipc_init_threadpool();
 
+    // Start the message bus dispatcher in a separate thread
+    messageBus.start();
+
+    if (!file_exists_and_executable(ipc_server_path_name))
+    {
+        return;
+    }
     // Attempt to open a Unix socket (AF_UNIX) with the specified protocol (SOCK_STREAM)
     int fd = client.open_socket(AF_UNIX, SOCK_STREAM, 0);
     socket_client.store(fd);
@@ -506,29 +523,38 @@ __attribute__((constructor)) void app_main()
     // Check if the socket was opened successfully
     if (fd < 0)
     {
-        std::cerr << "[App] Failed to open socket.\n"; // Log error if socket opening fails
-        return;                                        // Return early if socket couldn't be opened
+        std::cerr << "[App] Failed to open ipc socket.\n"; // Log error if socket opening fails
+        return;                                            // Return early if socket couldn't be opened
     }
 
-    if (!is_ipc_socket_server_process_running("octopus_ipc_server"))
+    if (!is_ipc_socket_server_process_running(ipc_server_name))
     {
         std::cout << "Client: IPC server not running,Starting the server...\n";
-        start_process_as_server("/res/bin/octopus_ipc_server");
+        start_process_as_server(ipc_server_path_name);
     }
 
     // Attempt to establish a connection with the server via the Unix socket
-    if (!client.connect_to_socket(fd, "/tmp/octopus/ipc_socket"))
+    int connected_result = connected_result = client.connect_to_socket(fd, ipc_socket_path_name);
+    if (connected_result < 0)
     {
         std::cerr << "[App] Failed to connect to server.\n"; // Log error if connection fails
         client.close_socket(fd);                             // Close the socket before returning
         socket_client.store(-1);                             // Store an invalid socket file descriptor to indicate failure
-        return;                                              // Return early if the connection could not be established
+        // return;                                              // Return early if the connection could not be established
     }
-
-    std::cout << "[App] Successfully connected to server.\n"; // Log success when connection is established
+    
+    // allow to start server and connect again in ipc_receiver_thread
+    if (connected_result > 0)
+    {
+        std::cout << "[App] Successfully connected to server.\n"; // Log success when connection is established
+    }
 
     // Attempt to initialize epoll for event-driven communication
     client.init_epoll(fd);
+    // Start a new thread to handle receiving responses asynchronously
+    socket_running.store(true);                                   // Set the 'running' flag to true to indicate that the application is running
+    ipc_receiver_thread = std::thread(ipc_receive_response_loop); // Start the response handling thread
+
     // if (!client.init_epoll(fd))
     //{
     // std::cerr << "[App] Failed to initialize epoll.\n"; // Log error if epoll initialization fails
@@ -536,10 +562,6 @@ __attribute__((constructor)) void app_main()
     // socket_client.store(-1);                            // Store an invalid socket file descriptor to indicate failure
     // return;                                             // Return early if epoll initialization fails
     //}
-
-    // Start a new thread to handle receiving responses asynchronously
-    running.store(true);                                      // Set the 'running' flag to true to indicate that the application is running
-    receiver_thread = std::thread(ipc_receive_response_loop); // Start the response handling thread
 }
 
 /**
@@ -549,17 +571,53 @@ __attribute__((destructor)) void exit_cleanup()
 {
     std::cout << "App: Cleaning up resources...\n";
 
-    if (!std::atomic_exchange(&running, false)) // Ensure cleanup is only performed once
+    // Ensure cleanup is only performed once using atomic flag
+    if (!std::atomic_exchange(&socket_running, false))
     {
-        return;
+        std::cout << "App: Cleanup already performed, skipping...\n";
+        // return;
     }
 
-    client.close_socket(socket_client.load());
-
-    if (receiver_thread.joinable())
+    // Stop the message bus, ensuring that it is safely stopped before continuing.
+    try
     {
-        receiver_thread.join();
+        messageBus.stop();
+        std::cout << "App: Message bus stopped.\n";
     }
+    catch (const std::exception &e)
+    {
+        std::cerr << "App: Error stopping message bus: " << e.what() << std::endl;
+    }
+
+    // Safely close the socket connection
+    try
+    {
+        client.close_socket(socket_client.load());
+        std::cout << "App: Socket closed.\n";
+    }
+    catch (const std::exception &e)
+    {
+        std::cerr << "App: Error closing socket: " << e.what() << std::endl;
+    }
+
+    // Ensure receiver thread is properly joined if it is joinable
+    if (ipc_receiver_thread.joinable())
+    {
+        try
+        {
+            ipc_receiver_thread.join();
+            std::cout << "App: Receiver thread joined successfully.\n";
+        }
+        catch (const std::exception &e)
+        {
+            std::cerr << "App: Error joining receiver thread: " << e.what() << std::endl;
+        }
+    }
+    else
+    {
+        std::cout << "App: No receiver thread to join.\n";
+    }
+    std::cout << "App: Cleanup complete.\n";
 }
 
 void ipc_redirect_log_to_file()
