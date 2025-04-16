@@ -20,10 +20,13 @@
 #include <mutex>
 #include <csignal>
 #include <chrono>
+#include "octopus_message_bus.hpp"
+#include "octopus_message_bus_c_api.h"
 #include "../IPC/octopus_ipc_ptl.hpp"
 #include "../IPC/octopus_logger.hpp"
-#include "octopus_message_bus.hpp"
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 #ifdef __cplusplus
 extern "C"
 {

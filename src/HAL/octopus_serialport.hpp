@@ -25,6 +25,7 @@
 #include <termios.h> // Serial port configuration
 #include <cstring>   // For memset
 #include <atomic>    // Thread-safe variables
+#include <cstdint> 
 
 /**
  * @class SerialPort
@@ -37,8 +38,8 @@
 class SerialPort
 {
 public:
-    using DataCallback = std::function<void(const std::string &)>;
-
+    //using DataCallback = std::function<void(const std::string &)>;
+    using DataCallback = std::function<void(const uint8_t *data, size_t length)>;
     /**
      * @brief Constructor for SerialPort
      * @param port The serial port name (e.g., "/dev/ttyS0")
@@ -67,7 +68,7 @@ public:
      * @param data The string data to be sent
      * @return True if data is successfully written, false otherwise
      */
-    bool writeData(const std::string &data);
+    int writeData(const uint8_t* buffer, size_t length);
 
     /**
      * @brief Sets a callback function to process received data
@@ -88,6 +89,8 @@ private:
     std::atomic<bool> isRunning; ///< Flag indicating whether the thread is running
     std::thread readThread;      ///< Thread for handling serial read operations
     DataCallback dataCallback;   ///< Callback function for handling received data
+    speed_t getBaudRateConstant(int baudRateValue);
+    std::string baudRateToString(speed_t baud);
 };
 
 #endif // SERIALPORT_HPP

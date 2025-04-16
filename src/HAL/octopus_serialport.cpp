@@ -10,9 +10,9 @@
 #include <sys/epoll.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <termios.h>
 #include <iostream>
 #include <thread>
+#include <termios.h>
 
 // Constructor
 /**
@@ -43,6 +43,9 @@ SerialPort::~SerialPort()
 bool SerialPort::openPort()
 {
     // Open the serial port in non-blocking mode
+    // O_RDWR     : Open for reading and writing
+    // O_NOCTTY   : Do not assign the opened port as the controlling terminal for the process
+    // O_NONBLOCK : Enable non-blocking I/O
     serialFd = open(portName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (serialFd == -1)
     {
@@ -50,24 +53,50 @@ bool SerialPort::openPort()
         return false;
     }
 
-    // Configure the serial port settings
-    struct termios options;
+    // Retrieve current terminal I/O settings
+    struct termios options = {0};
     tcgetattr(serialFd, &options);
-    cfsetispeed(&options, baudRate);
-    cfsetospeed(&options, baudRate);
-    options.c_cflag |= (CLOCAL | CREAD); // Enable receiver and local mode
-    options.c_cflag &= ~PARENB;          // Disable parity
-    options.c_cflag &= ~CSTOPB;          // 1 stop bit
-    options.c_cflag &= ~CSIZE;
-    options.c_cflag |= CS8;                             // 8 data bits
-    options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // Disable canonical mode and echo
-    options.c_iflag &= ~(IXON | IXOFF | IXANY);         // Disable software flow control
-    options.c_oflag &= ~OPOST;                          // Disable output processing
+    speed_t b_baudRate = getBaudRateConstant(baudRate);
+    // Set baud rate for both input and output
+    cfsetispeed(&options, b_baudRate);
+    cfsetospeed(&options, b_baudRate);
 
-    // Apply the configuration to the serial port
+    // Configure control modes
+    options.c_cflag |= (CLOCAL | CREAD); // Enable receiver, ignore modem control lines
+    options.c_cflag &= ~PARENB;          // Disable parity
+    options.c_cflag &= ~CSTOPB;          // Set 1 stop bit
+    options.c_cflag &= ~CSIZE;           // Clear data bit size setting
+    options.c_cflag |= CS8;              // Set 8 data bits
+
+    // options.c_cflag = B115200|CS8|CLOCAL|CREAD;
+    // Configure local modes (line discipline)
+    options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // Raw input (non-canonical), no echo, no signal chars
+
+    // Configure input modes
+    options.c_iflag &= ~(IXON | IXOFF | IXANY); // Disable XON/XOFF software flow control
+
+    // Configure output modes
+    options.c_oflag &= ~OPOST; // Raw output (disable output processing)
+
+    // Set VMIN and VTIME for non-canonical mode
+    // VMIN  = 1  : Read will block until at least 1 byte is received
+    // VTIME = 1  : Read timeout in tenths of a second (i.e., 0.1s)
+    options.c_cc[VMIN] = 1;
+    options.c_cc[VTIME] = 1;
+    tcflush(serialFd, TCIOFLUSH);
+    // Apply the modified settings to the serial port immediately
     tcsetattr(serialFd, TCSANOW, &options);
 
-    // Set up epoll for efficient event handling
+    // Print out the serial port configuration
+    // std::cout << "Serial Port Configuration:" << std::endl;
+    // std::cout << "Port Name: " << portName << std::endl;
+    // std::cout << "Baud Rate: " << baudRate << std::endl;
+    // std::cout << "Data Bits: 8" << std::endl;
+    // std::cout << "Stop Bits: 1" << std::endl;
+    // std::cout << "Parity: None" << std::endl;
+    // std::cout << "Flow Control: Disabled" << std::endl;
+
+    // Create an epoll instance for efficient I/O event notification
     epollFd = epoll_create1(0);
     if (epollFd == -1)
     {
@@ -76,9 +105,11 @@ bool SerialPort::openPort()
         return false;
     }
 
+    // Register the serial file descriptor with epoll for input events
     struct epoll_event ev;
-    ev.events = EPOLLIN; // We want to monitor input events (data available for reading)
-    ev.data.fd = serialFd;
+    ev.events = EPOLLIN;   // Notify when input is available to read
+    ev.data.fd = serialFd; // Associate the serial file descriptor with the event
+
     if (epoll_ctl(epollFd, EPOLL_CTL_ADD, serialFd, &ev) == -1)
     {
         std::cerr << "Failed to add serial fd to epoll." << std::endl;
@@ -86,11 +117,11 @@ bool SerialPort::openPort()
         return false;
     }
 
-    // Start the reading loop in a separate thread
+    // Launch a separate thread to continuously monitor and read data
     isRunning = true;
     readThread = std::thread(&SerialPort::readLoop, this);
 
-    std::cout << "Serial port " << portName << " opened successfully." << std::endl;
+    // Success: Serial port is configured and reading thread is started
     return true;
 }
 
@@ -127,15 +158,33 @@ void SerialPort::closePort()
  * @param data The data to be written to the serial port.
  * @return True if the data was successfully written, false otherwise.
  */
-bool SerialPort::writeData(const std::string &data)
+int SerialPort::writeData(const uint8_t *buffer, size_t length)
 {
     if (serialFd == -1)
     {
         std::cerr << "Serial port not open, cannot write data." << std::endl;
-        return false;
+        return 0;
     }
-    ssize_t bytesWritten = write(serialFd, data.c_str(), data.size());
-    return bytesWritten == data.size();
+
+    // Attempt to write the data buffer to the serial port
+    ssize_t bytesWritten = write(serialFd, buffer, length);
+
+    if (bytesWritten == static_cast<ssize_t>(length))
+    {
+        // Log the data in hex format for debugging
+        // std::cout << "[Serial Write] Success: ";
+        // for (size_t i = 0; i < length; ++i)
+        // {
+        //    printf("%02X ", buffer[i]);
+        // }
+        // std::cout << std::endl;
+        return bytesWritten;
+    }
+    else
+    {
+        std::cerr << "[Serial Write] Failed: wrote " << bytesWritten << " of " << length << " bytes." << std::endl;
+        return bytesWritten;
+    }
 }
 
 // Set the callback for received data
@@ -157,7 +206,7 @@ void SerialPort::setCallback(DataCallback callback)
 void SerialPort::readLoop()
 {
     struct epoll_event events[1]; // Array to store the events returned by epoll_wait
-    char buffer[512];             // Buffer for reading data from the serial port
+    uint8_t buffer[512];             // Buffer for reading data from the serial port
 
     // Infinite loop to continually monitor for incoming data on the serial port
     while (isRunning)
@@ -186,16 +235,163 @@ void SerialPort::readLoop()
             if (bytesRead > 0)
             {
                 // If data was successfully read, convert it into a string
+                #if 0
                 std::string receivedData(buffer, bytesRead);
-
+                // Log raw data in hex format
+                std::cout << "[Serial Read] " << bytesRead << " bytes received: ";
+                for (int i = 0; i < bytesRead; ++i)
+                {
+                    printf("%02X ", static_cast<unsigned char>(buffer[i]));
+                }
+                std::cout << " | As string: \"" << receivedData << "\"" << std::endl;
+                #endif
                 // If a callback is set, call the callback function to process the received data
                 if (dataCallback)
                 {
-                    dataCallback(receivedData); // Process the received data
+                    //dataCallback(receivedData); // Process the received data
+                    dataCallback(reinterpret_cast<const uint8_t*>(buffer), bytesRead);
                 }
             }
         }
     }
 
     // Optionally, you could perform any necessary cleanup or recovery actions here.
+}
+
+speed_t SerialPort::getBaudRateConstant(int baudRateValue)
+{
+    switch (baudRateValue)
+    {
+    case 0:
+        return B0;
+    case 50:
+        return B50;
+    case 75:
+        return B75;
+    case 110:
+        return B110;
+    case 134:
+        return B134;
+    case 150:
+        return B150;
+    case 200:
+        return B200;
+    case 300:
+        return B300;
+    case 600:
+        return B600;
+    case 1200:
+        return B1200;
+    case 1800:
+        return B1800;
+    case 2400:
+        return B2400;
+    case 4800:
+        return B4800;
+    case 9600:
+        return B9600;
+    case 19200:
+        return B19200;
+    case 38400:
+        return B38400;
+    case 57600:
+        return B57600;
+    case 115200:
+        return B115200;
+    case 230400:
+        return B230400;
+    case 460800:
+        return B460800;
+    case 500000:
+        return B500000;
+    case 576000:
+        return B576000;
+    case 921600:
+        return B921600;
+    case 1000000:
+        return B1000000;
+    case 1152000:
+        return B1152000;
+    case 1500000:
+        return B1500000;
+    case 2000000:
+        return B2000000;
+    case 2500000:
+        return B2500000;
+    case 3000000:
+        return B3000000;
+    case 3500000:
+        return B3500000;
+    case 4000000:
+        return B4000000;
+    default:
+        return B9600; // Fallback default
+    }
+}
+
+std::string SerialPort::baudRateToString(speed_t baud)
+{
+    switch (baud)
+    {
+    case B0:
+        return "0";
+    case B50:
+        return "50";
+    case B75:
+        return "75";
+    case B110:
+        return "110";
+    case B134:
+        return "134";
+    case B150:
+        return "150";
+    case B200:
+        return "200";
+    case B300:
+        return "300";
+    case B600:
+        return "600";
+    case B1200:
+        return "1200";
+    case B1800:
+        return "1800";
+    case B2400:
+        return "2400";
+    case B4800:
+        return "4800";
+    case B9600:
+        return "9600";
+    case B19200:
+        return "19200";
+    case B38400:
+        return "38400";
+    case B57600:
+        return "57600";
+    case B115200:
+        return "115200";
+    case B230400:
+        return "230400";
+#ifdef B460800
+    case B460800:
+        return "460800";
+#endif
+#ifdef B500000
+    case B500000:
+        return "500000";
+#endif
+#ifdef B576000
+    case B576000:
+        return "576000";
+#endif
+#ifdef B921600
+    case B921600:
+        return "921600";
+#endif
+#ifdef B1000000
+    case B1000000:
+        return "1000000";
+#endif
+    default:
+        return "Unknown";
+    }
 }

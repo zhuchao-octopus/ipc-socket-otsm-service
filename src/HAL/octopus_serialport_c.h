@@ -1,6 +1,9 @@
 #ifndef OCTOPUS_SERIALPORT_C_H
 #define OCTOPUS_SERIALPORT_C_H
 
+#include <stdint.h>
+#include <stddef.h>
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -43,7 +46,7 @@ extern "C"
      * @param data The data to be sent (null-terminated string or binary buffer).
      * @return Number of bytes written, or -1 on failure.
      */
-    int serialport_write(SerialPortHandle handle, const char *data);
+    int serialport_write(SerialPortHandle handle, const uint8_t *data, size_t length);
 
     /**
      * @brief Function pointer type for receiving data asynchronously.
@@ -53,7 +56,7 @@ extern "C"
      * @param data Pointer to received data (may not be null-terminated).
      * @param length Length of the received data buffer.
      */
-    typedef void (*DataCallback)(const char *data, int length);
+    typedef void (*DataCallback)(const uint8_t  *data, int length);
 
     /**
      * @brief Register a callback function to be called when data is received.
@@ -61,7 +64,7 @@ extern "C"
      * @param handle The serial port handle.
      * @param callback The function to call when data is available.
      */
-    void serialport_set_callback(SerialPortHandle handle, DataCallback callback);
+    bool serialport_set_callback(SerialPortHandle handle, DataCallback callback);
 
 #ifdef __cplusplus
 }

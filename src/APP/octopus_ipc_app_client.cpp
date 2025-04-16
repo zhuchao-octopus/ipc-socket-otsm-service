@@ -47,7 +47,7 @@ struct CallbackEntry
 std::list<CallbackEntry> g_named_callbacks;
 
 // Create an instance of the message bus
-OctopusMessageBus messageBus;
+OctopusMessageBus *g_message_bus = &OctopusMessageBus::instance();
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 bool file_exists_and_executable(const std::string &path)
@@ -510,7 +510,8 @@ __attribute__((constructor)) void app_main()
     ipc_init_threadpool();
 
     // Start the message bus dispatcher in a separate thread
-    messageBus.start();
+    if (g_message_bus)
+        g_message_bus->start();
 
     if (!file_exists_and_executable(ipc_server_path_name))
     {
@@ -542,7 +543,7 @@ __attribute__((constructor)) void app_main()
         socket_client.store(-1);                             // Store an invalid socket file descriptor to indicate failure
         // return;                                              // Return early if the connection could not be established
     }
-    
+
     // allow to start server and connect again in ipc_receiver_thread
     if (connected_result > 0)
     {
@@ -581,7 +582,12 @@ __attribute__((destructor)) void exit_cleanup()
     // Stop the message bus, ensuring that it is safely stopped before continuing.
     try
     {
-        messageBus.stop();
+        if (g_message_bus)
+        {
+            g_message_bus->stop();
+            delete g_message_bus;
+            g_message_bus = nullptr;
+        }
         std::cout << "App: Message bus stopped.\n";
     }
     catch (const std::exception &e)

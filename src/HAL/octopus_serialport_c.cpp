@@ -53,40 +53,44 @@ extern "C"
      * @param data   Pointer to the data to send (must be null-terminated).
      * @return 1 if success, 0 if sending failed, -1 if input is invalid.
      */
-    int serialport_write(SerialPortHandle handle, const char *data)
+    int serialport_write(SerialPortHandle handle, const uint8_t *data, size_t length)
     {
-        if (!handle || !data)
+        if (!handle || !data || length == 0)
         {
             return -1;
         }
 
         SerialPort *serial = static_cast<SerialPort *>(handle);
-        return serial->writeData(std::string(data)) ? 1 : 0;
+        return serial->writeData(data, length);
     }
-
     /**
      * @brief Registers a callback to be invoked when data is received.
      *
-     * The callback is called from the internal receive loop with a pointer to the received data.
+     * This version avoids copying to std::string and instead passes raw byte data
+     * directly to the user-provided callback function.
      *
      * @param handle   A valid SerialPortHandle.
-     * @param callback A function pointer that receives raw data and its length.
+     * @param callback A function that receives raw uint8_t* data and its length.
+     * @return true if the callback was registered and port opened successfully.
      */
-    void serialport_set_callback(SerialPortHandle handle, DataCallback callback)
+    bool serialport_set_callback(SerialPortHandle handle, DataCallback callback)
     {
         if (!handle || !callback)
         {
-            return;
+            return false;
         }
 
         SerialPort *serial = static_cast<SerialPort *>(handle);
 
-        // Copy the data into a lambda-safe string to ensure memory validity
-        serial->setCallback([callback](const std::string &data)
+        // Set internal callback to forward raw byte data directly
+        serial->setCallback([callback](const uint8_t *data, size_t length)
                             {
-                                if (!data.empty())
-                                {
-                                    callback(data.c_str(), static_cast<int>(data.size()));
-                                } });
+                            if (data && length > 0)
+                            {
+                                callback(data, length);
+                            } });
+
+        // Open the serial port after setting the callback
+        return serial->openPort();
     }
 }
