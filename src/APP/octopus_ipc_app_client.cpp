@@ -50,11 +50,13 @@ std::list<CallbackEntry> g_named_callbacks;
 OctopusMessageBus *g_message_bus = &OctopusMessageBus::instance();
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-bool file_exists_and_executable(const std::string &path)
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+bool ipc_file_exists_and_executable(const std::string &path)
 {
     return access(path.c_str(), X_OK) == 0;
 }
-bool is_process_running(const std::string &process_name)
+bool ipc_is_process_running(const std::string &process_name)
 {
     FILE *fp = popen(("pidof " + process_name).c_str(), "r");
     if (!fp)
@@ -66,7 +68,7 @@ bool is_process_running(const std::string &process_name)
     return found;
 }
 
-bool is_ipc_socket_server_process_running(const std::string &process_name)
+bool ipc_is_socket_server_process_running(const std::string &process_name)
 {
     FILE *fp;
     const size_t buffer_size = 500; // Increase buffer size to accommodate larger output
@@ -96,7 +98,7 @@ bool is_ipc_socket_server_process_running(const std::string &process_name)
     return found;
 }
 
-void start_process_as_server(const std::string &process_path)
+void ipc_start_process_as_server(const std::string &process_path)
 {
     // Check if the process path exists
     struct stat buffer;
@@ -131,7 +133,7 @@ void start_process_as_server(const std::string &process_path)
         // sleep(1);                                                        // Wait for the process to start
         // std::string ps_command = "ps aux | grep '" + process_path + "'"; // Using 'grep' to filter the output
         // system(ps_command.c_str());                                      // Execute the ps command to check if the process is running
-        if (!is_ipc_socket_server_process_running(process_path))
+        if (!ipc_is_socket_server_process_running(process_path))
         {
             std::cout << "Client: Bad Failed to start IPC Socket Server,restart " << process_path << std::endl;
         }
@@ -145,14 +147,8 @@ void ipc_init_threadpool()
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Send a query to the server without additional data
-void app_send_query(uint8_t group, uint8_t msg)
-{
-    app_send_query(group, msg, {});
-}
-
 // Send a query to the server with additional data
-void app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &query_array)
+void ipc_app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &query_array)
 {
     if (socket_client.load() < 0)
     {
@@ -171,14 +167,8 @@ void app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &quer
     client.send_query(socket_client.load(), serialized_data);
 }
 
-// Send a command to the server without additional data
-void app_send_command(uint8_t group, uint8_t msg)
-{
-    app_send_command(group, msg, {});
-}
-
 // Send a command to the server with additional data
-void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &parameters)
+void ipc_app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &parameters)
 {
     if (socket_client.load() < 0)
     {
@@ -198,7 +188,7 @@ void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &pa
  * @brief Registers a callback function to be invoked upon receiving a response.
  * @param callback Function pointer to the callback function.
  */
-void register_ipc_socket_callback(std::string func_name, OctopusAppResponseCallback callback)
+void ipc_register_socket_callback(std::string func_name, OctopusAppResponseCallback callback)
 {
     if (callback)
     {
@@ -217,7 +207,7 @@ void register_ipc_socket_callback(std::string func_name, OctopusAppResponseCallb
  *
  * @param callback The function pointer of the callback to be unregistered.
  */
-void unregister_ipc_socket_callback(OctopusAppResponseCallback callback)
+void ipc_unregister_socket_callback(OctopusAppResponseCallback callback)
 {
     // Lock the callback list to ensure thread safety
     std::lock_guard<std::mutex> lock(callback_mutex);
@@ -253,7 +243,7 @@ void unregister_ipc_socket_callback(OctopusAppResponseCallback callback)
  * @param response The received response vector.
  * @param size The size of the response vector.
  */
-void invoke_notify_response(const DataMessage &query_msg, int size)
+void ipc_invoke_notify_response(const DataMessage &query_msg, int size)
 {
     // 复制一份有效回调（值拷贝或智能指针）
     std::vector<std::shared_ptr<CallbackEntry>> active_callbacks;
@@ -342,25 +332,25 @@ void ipc_reconnect_to_server()
     {
         std::cerr << "App: Failed to reconnect to the server. Retrying...\n";
         // Check if the IPC process is running, if not, start the process
-        if (!is_ipc_socket_server_process_running(ipc_server_name))
+        if (!ipc_is_socket_server_process_running(ipc_server_name))
         {
             std::cout << "Client: Reconnect failed due to IPC server not running,Starting the server...\n";
-            start_process_as_server(ipc_server_path_name);
+            ipc_start_process_as_server(ipc_server_path_name);
         }
     }
     else
     {
         std::cout << "App: Successfully reconnected to the server.\n";
         // If data pushing is required, start the request to push data
-        if (request_push_data)
-        {
-            start_request_push_data(true);
-        }
+        // if (request_push_data)
+        //{
+        //    start_request_push_data(true);
+        //}
     }
 }
 
 // Function to check if data packet is complete
-DataMessage check_complete_data_packet(std::vector<uint8_t> &buffer, DataMessage &query_msg)
+DataMessage ipc_check_complete_data_packet(std::vector<uint8_t> &buffer, DataMessage &query_msg)
 {
     // Reset to invalid state (used for isValid() check later)
     query_msg.group = -1;
@@ -468,11 +458,11 @@ void ipc_receive_response_loop()
         // Extract and process complete packets
         while (buffer.size() >= query_msg.get_base_length())
         {
-            query_msg = check_complete_data_packet(buffer, query_msg);
+            query_msg = ipc_check_complete_data_packet(buffer, query_msg);
 
             if (query_msg.isValid())
             {
-                invoke_notify_response(query_msg, query_msg.get_total_length());
+                ipc_invoke_notify_response(query_msg, query_msg.get_total_length());
             }
             else
             {
@@ -491,14 +481,14 @@ void ipc_receive_response_loop()
 void ipc_signal_handler(int signum)
 {
     std::cout << "Client: Interrupt signal received. Cleaning up...\n";
-    exit_cleanup();
+    ipc_exit_cleanup();
     std::exit(signum);
 }
 
 /**
  * @brief Initializes the application, sets up the socket connection, and starts the response thread.
  */
-__attribute__((constructor)) void app_main()
+__attribute__((constructor)) void ipc_app_main()
 {
     // Register signal handler for SIGINT to safely shutdown the application when interrupt signal is received
     signal(SIGINT, ipc_signal_handler);
@@ -513,7 +503,7 @@ __attribute__((constructor)) void app_main()
     if (g_message_bus)
         g_message_bus->start();
 
-    if (!file_exists_and_executable(ipc_server_path_name))
+    if (!ipc_file_exists_and_executable(ipc_server_path_name))
     {
         return;
     }
@@ -528,10 +518,10 @@ __attribute__((constructor)) void app_main()
         return;                                            // Return early if socket couldn't be opened
     }
 
-    if (!is_ipc_socket_server_process_running(ipc_server_name))
+    if (!ipc_is_socket_server_process_running(ipc_server_name))
     {
         std::cout << "Client: IPC server not running,Starting the server...\n";
-        start_process_as_server(ipc_server_path_name);
+        ipc_start_process_as_server(ipc_server_path_name);
     }
 
     // Attempt to establish a connection with the server via the Unix socket
@@ -568,7 +558,7 @@ __attribute__((constructor)) void app_main()
 /**
  * @brief Cleanup function to properly close the socket and stop the receiving thread.
  */
-__attribute__((destructor)) void exit_cleanup()
+__attribute__((destructor)) void ipc_exit_cleanup()
 {
     std::cout << "App: Cleaning up resources...\n";
 
@@ -644,10 +634,71 @@ void ipc_redirect_log_to_file()
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-void start_request_push_data(bool requested)
+void ipc_start_request_push_data(bool requested)
 {
     // std::vector<uint8_t> parameters(str.begin(), str.end());
     request_push_data = requested;
     if (request_push_data)
-        app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_FLAG, {0, 1});
+        ipc_app_send_command(MSG_GROUP_SET, MSG_IPC_SOCKET_CONFIG_FLAG, {0, 1});
+}
+
+void ipc_send_message(DataMessage &message)
+{
+    if (socket_client.load() < 0)
+    {
+        std::cerr << "App: Cannot send command, no active connection.\n";
+        return;
+    }
+    std::vector<uint8_t> serialized_data = message.serializeMessage();
+    client.send_query(socket_client.load(), serialized_data);
+}
+
+/**
+ * @brief Enqueue an IPC message to be sent asynchronously using the thread pool.
+ *
+ * This function is used to queue a DataMessage for non-blocking transmission
+ * over a socket connection. The actual send operation is delegated to the
+ * thread pool to prevent blocking the main thread, which is useful in
+ * high-frequency or latency-sensitive systems.
+ *
+ * A copy of the message is captured inside the lambda to avoid issues
+ * related to reference lifetimes, since the lambda may be executed after
+ * the original reference is out of scope.
+ *
+ * @param message The DataMessage to send. Passed by reference but copied internally.
+ */
+void ipc_send_message_queue(DataMessage &message)
+{
+    // Copy the message to ensure it remains valid when the lambda executes
+    DataMessage copied_msg = message;
+
+    // Submit the send task to the thread pool asynchronously
+    g_threadPool.enqueue([copied_msg]() mutable
+                         {
+        // Check if the socket is still valid before sending
+        if (socket_client.load() < 0)
+        {
+            std::cerr << "App: Cannot send command, no active connection (queued).\n";
+            return;  // Exit early if there's no active socket connection
+        }
+
+        // Serialize the message into a byte vector for transmission
+        std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
+
+        // Send the serialized data over the active socket
+        client.send_query(socket_client.load(), serialized_data); });
+}
+
+void ipc_send_message_queue_delayed(DataMessage& message, int delay_ms)
+{
+    DataMessage copied_msg = message;
+    g_threadPool.enqueue_delayed([copied_msg]() mutable {
+        if (socket_client.load() < 0)
+        {
+            std::cerr << "App: Cannot send command, no active connection (delayed).\n";
+            return;
+        }
+        std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
+        client.send_query(socket_client.load(), serialized_data);
+    }, delay_ms);
 }

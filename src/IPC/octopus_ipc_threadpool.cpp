@@ -56,7 +56,17 @@ OctopusThreadPool::~OctopusThreadPool()
     // Log the shutdown of the thread pool
     std::cout << "[ThreadPoolPlus] Shutting down thread pool." << std::endl;
 }
-
+/**
+ * @brief Submit a task to the thread pool for asynchronous execution.
+ *
+ * This function safely enqueues a task into the internal task queue. If the queue is full,
+ * the behavior depends on the configured TaskOverflowStrategy:
+ * - DropOldest: Remove the oldest task from the queue to make space.
+ * - DropNewest: Reject the new task silently.
+ * - Block: Wait until there is space in the queue.
+ *
+ * @param task The task to be executed, wrapped in a std::function<void()>.
+ */
 void OctopusThreadPool::enqueue(const std::function<void()> &task)
 {
     {
@@ -67,23 +77,26 @@ void OctopusThreadPool::enqueue(const std::function<void()> &task)
         case TaskOverflowStrategy::DropOldest:
             if (task_queue_.size() >= max_queue_size_)
             {
+                // If queue is full, discard the oldest task
                 std::cerr << "[ThreadPoolPlus] Queue full. Dropping oldest task." << std::endl;
-                task_queue_.pop_front(); // 丢最老
+                task_queue_.pop_front();
             }
+            // Add the new task to the end of the queue
             task_queue_.emplace_back(task);
             break;
 
         case TaskOverflowStrategy::DropNewest:
             if (task_queue_.size() >= max_queue_size_)
             {
+                // If queue is full, drop this new task
                 std::cerr << "[ThreadPoolPlus] Queue full. Dropping newest task." << std::endl;
-                return; // 丢当前
+                return;
             }
             task_queue_.emplace_back(task);
             break;
 
         case TaskOverflowStrategy::Block:
-            // 等待队列腾出空间
+            // Wait until there is space in the queue
             while (task_queue_.size() >= max_queue_size_)
             {
                 std::cerr << "[ThreadPoolPlus] Queue full. Waiting..." << std::endl;
@@ -95,6 +108,69 @@ void OctopusThreadPool::enqueue(const std::function<void()> &task)
             break;
         }
     }
+
+    // Notify one worker thread that a new task is available
+    task_cv_.notify_one();
+}
+
+/**
+ * @brief Submit a task to the thread pool for asynchronous execution with a delay.
+ *
+ * This function enqueues a task, but delays its execution by the specified duration
+ * before it is added to the task queue. It works similarly to `enqueue`, but with an 
+ * additional parameter for the delay time.
+ *
+ * @param task The task to be executed, wrapped in a std::function<void()>.
+ * @param delay The delay time before the task is added to the queue (in milliseconds).
+ */
+void OctopusThreadPool::enqueue_delayed(const std::function<void()> &task, unsigned int delay)
+{
+    {
+        std::unique_lock<std::mutex> lock(queue_mutex_);
+
+        // Schedule the task for execution after the specified delay
+        auto delayed_task = [task, delay]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delay)); // Delay for the specified time
+            task(); // Execute the task after the delay
+        };
+
+        switch (overflow_strategy_)
+        {
+        case TaskOverflowStrategy::DropOldest:
+            if (task_queue_.size() >= max_queue_size_)
+            {
+                // If the queue is full, drop the oldest task
+                std::cerr << "[ThreadPoolPlus] Queue full. Dropping oldest task." << std::endl;
+                task_queue_.pop_front();
+            }
+            task_queue_.emplace_back(delayed_task);
+            break;
+
+        case TaskOverflowStrategy::DropNewest:
+            if (task_queue_.size() >= max_queue_size_)
+            {
+                // If the queue is full, reject the new task
+                std::cerr << "[ThreadPoolPlus] Queue full. Dropping newest task." << std::endl;
+                return;
+            }
+            task_queue_.emplace_back(delayed_task);
+            break;
+
+        case TaskOverflowStrategy::Block:
+            while (task_queue_.size() >= max_queue_size_)
+            {
+                // If the queue is full, wait for space
+                std::cerr << "[ThreadPoolPlus] Queue full. Waiting..." << std::endl;
+                lock.unlock();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                lock.lock();
+            }
+            task_queue_.emplace_back(delayed_task);
+            break;
+        }
+    }
+
+    // Notify a worker thread to start processing the new task
     task_cv_.notify_one();
 }
 

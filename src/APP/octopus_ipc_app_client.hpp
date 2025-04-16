@@ -31,41 +31,40 @@
 extern "C"
 {
 #endif
-
     /**
      * @brief Function pointer type for handling server responses.
      * @param response The received response data.
      * @param size The size of the response vector.
      */
+
     typedef void (*OctopusAppResponseCallback)(const DataMessage &query_msg, int size);
 
     /**
      * @brief Registers a callback function to be called when a response is received.
      * @param callback Function pointer to the callback.
      */
-    void register_ipc_socket_callback(std::string func_name, OctopusAppResponseCallback callback);
-    void unregister_ipc_socket_callback(OctopusAppResponseCallback callback);
+
+    void ipc_register_socket_callback(std::string func_name, OctopusAppResponseCallback callback);
+    void ipc_unregister_socket_callback(OctopusAppResponseCallback callback);
+
     /**
      * @brief Initializes the client connection and starts the response receiver thread.
      * This function is automatically called when the shared library is loaded.
      */
-    void app_main();
+    void ipc_app_main();
 
     /**
      * @brief Cleans up the client connection and stops the response receiver thread.
      * This function is automatically called when the shared library is unloaded.
      */
-    void exit_cleanup();
+    void ipc_exit_cleanup();
 
-    void start_request_push_data(bool requested);
+    void ipc_send_message(DataMessage &message);
+    void ipc_send_message_queue(DataMessage &message);
+    void ipc_send_message_queue_delayed(DataMessage& message, int delay_ms);
 
 #ifdef __cplusplus
 }
 #endif
-
-void app_send_query(uint8_t group, uint8_t msg);
-void app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &query_array);
-void app_send_command(uint8_t group, uint8_t msg);
-void app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t> &parameters);
 
 #endif // CLIENT_HPP

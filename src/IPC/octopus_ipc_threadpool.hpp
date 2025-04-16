@@ -22,10 +22,11 @@
 #include <atomic>
 
 // octopus_ipc_threadpool.hpp (放在类外面或类内 public 区域)
-enum class TaskOverflowStrategy {
-    DropOldest,   // 丢弃最老任务
-    DropNewest,   // 丢弃当前提交的任务
-    Block         // 阻塞等待队列有空位
+enum class TaskOverflowStrategy
+{
+    DropOldest, // 丢弃最老任务
+    DropNewest, // 丢弃当前提交的任务
+    Block       // 阻塞等待队列有空位
 };
 
 /**
@@ -58,6 +59,17 @@ public:
      * @param task A std::function<void()> representing the task.
      */
     void enqueue(const std::function<void()> &task);
+    /**
+     * @brief Submit a task to the thread pool for asynchronous execution with a delay.
+     *
+     * This function enqueues a task, but delays its execution by the specified duration
+     * before it is added to the task queue. It works similarly to `enqueue`, but with an 
+     * additional parameter for the delay time.
+     *
+     * @param task The task to be executed, wrapped in a std::function<void()>.
+     * @param delay The delay time before the task is added to the queue (in milliseconds).
+     */
+    void enqueue_delayed(const std::function<void()> &task, unsigned int delay);
 
     /**
      * @brief Submit a task with return value support.
@@ -113,17 +125,17 @@ private:
      */
     void remove_threads(size_t count);
 
-    std::vector<std::thread> workers_;              ///< Vector of worker threads
-    std::deque<std::function<void()>> task_queue_;  ///< Task queue
+    std::vector<std::thread> workers_;             ///< Vector of worker threads
+    std::deque<std::function<void()>> task_queue_; ///< Task queue
 
-    mutable std::mutex queue_mutex_;                ///< Mutex to protect task queue
-    std::condition_variable task_cv_;               ///< Condition variable for task notification
+    mutable std::mutex queue_mutex_;  ///< Mutex to protect task queue
+    std::condition_variable task_cv_; ///< Condition variable for task notification
 
-    std::atomic<bool> is_running_;                  ///< Pool running state
-    std::atomic<size_t> active_thread_count_;       ///< Active worker thread count
-    size_t max_queue_size_;                         ///< Maximum size of task queue
+    std::atomic<bool> is_running_;            ///< Pool running state
+    std::atomic<size_t> active_thread_count_; ///< Active worker thread count
+    size_t max_queue_size_;                   ///< Maximum size of task queue
 
-    std::atomic<bool> is_scaling_;                  ///< Prevent concurrent scaling during health check
+    std::atomic<bool> is_scaling_; ///< Prevent concurrent scaling during health check
 
     std::atomic<size_t> threads_to_terminate_{0};
     TaskOverflowStrategy overflow_strategy_;
