@@ -719,16 +719,45 @@ void ipc_send_message_queue_(DataMessage &message)
 
 void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
 {
+    // Make a copy of the message because the lambda will run asynchronously and possibly after the original goes out of scope.
     DataMessage copied_msg = message;
-    g_threadPool.enqueue_delayed([copied_msg]() mutable
-                                 {
+
+    // Enqueue a delayed task into the thread pool that will execute after 'delay_ms' milliseconds.
+    g_threadPool.enqueue_delayed([copied_msg,delay_ms]() mutable
+    {
+        // Constants for retry behavior
+        constexpr int retry_interval_ms = 100;     // Interval to re-check socket availability (100ms)
+        constexpr int max_wait_time_ms = 10000;     // Maximum time to wait for a valid socket (5000ms = 5 seconds)
+
+        int waited_ms = 0;  // Tracks how long we've waited
+
+        // Wait until the socket becomes available or timeout occurs
+        while (socket_client.load() < 0 && waited_ms < max_wait_time_ms)
+        {
+            // Sleep briefly to avoid CPU spinning
+            std::this_thread::sleep_for(std::chrono::milliseconds(retry_interval_ms));
+            waited_ms += retry_interval_ms;
+        }
+
+        // If socket is still unavailable after max wait time, report and abort
         if (socket_client.load() < 0)
         {
-            std::cerr << "App: Cannot send command, no active connection (delayed).\n";
+            std::cerr << "App: Cannot send command, no active connection after waiting.\n";
             return;
         }
+
+        // Log successful execution and waiting time
+        if(delay_ms > 0)
+        {
+           
+        std::cout << "App: Message sent successfully after waiting " << waited_ms << " ms for socket to be ready.\n";
+
+        }
+        // At this point, socket is valid; serialize and send the message
         std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
-        client.send_query(socket_client.load(), serialized_data); }, delay_ms);
+        client.send_query(socket_client.load(), serialized_data);
+
+    }, delay_ms); // Initial delay before starting the check-send task
 }
 
 /**
