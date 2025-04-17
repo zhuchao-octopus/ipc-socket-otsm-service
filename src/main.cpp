@@ -18,7 +18,7 @@ static T_ipc_send_message_queue_func ipc_send_message_queue = nullptr;
 
 static void *handle = nullptr; // 保持全局作用域
 
-void printf_vector_bytes(const std::vector<int> &vec, int length)
+void printf_vector_bytes(const std::vector<uint8_t> &vec, int length)
 {
     // std::cout << "printf_vector_bytes " << length << std::endl; //
     //  确保 length 不超过 vector 的大小
@@ -93,8 +93,11 @@ int main(int argc, char *argv[])
 
     // 调用 ipc_send_message_queue
     if (ipc_send_message_queue)
+    {
         ipc_send_message_queue(group, msg, delay, message_data);
-
+        std::cout << "App ipc_send_message_queue:";
+        printf_vector_bytes(message_data,message_data.size());
+    }
     // 注册信号处理，确保程序退出时释放 SO
     std::signal(SIGINT, [](int)
                 {

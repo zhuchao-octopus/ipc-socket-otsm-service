@@ -61,14 +61,14 @@ DataMessage::DataMessage(const std::vector<uint8_t> &data_array)
 
 DataMessage::DataMessage(uint8_t group, uint8_t msg, const std::vector<uint8_t> &data_array)
 {
-    size_t baseSize = sizeof(this->header) + sizeof(this->group) + sizeof(this->msg) + sizeof(this->length);
+    ///size_t head_Size = sizeof(this->header) + sizeof(this->group) + sizeof(this->msg) + sizeof(this->length);
 
-    // Ensure there is enough data for header, group, and msg
-    if (data_array.size() < baseSize)
-    {
-        std::cerr << "DataMessage Insufficient data to deserialize." << std::endl;
-        return;
-    }
+    /// Ensure there is enough data for header, group, and msg
+    ///if (data_array.size() < baseSize)
+    ///{
+    ///    std::cerr << "DataMessage Insufficient data to deserialize." << std::endl;
+    ///    return;
+    ///}
 
     // Extract header (2 bytes)
     this->header = _HEADER_;
@@ -188,7 +188,7 @@ bool DataMessage::isValid() const
  */
 void DataMessage::printMessage(const std::string &tag) const
 {
-    std::cout << tag << " - Header: 0x" << std::hex << std::setw(2) << std::setfill('0')
+    std::cout << tag << ": Header 0x" << std::hex << std::setw(2) << std::setfill('0')
               << header
               << ", Group: 0x" << static_cast<int>(group)
               << ", Msg: 0x" << static_cast<int>(msg)

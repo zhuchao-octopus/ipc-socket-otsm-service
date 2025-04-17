@@ -111,12 +111,25 @@ void ipc_remove_client(int fd)
 void ipc_print_active_clients()
 {
     std::lock_guard<std::mutex> lock(clients_mutex);
+
+    const int fd_width = 8;
+    const int ip_width = 16;
+    const int flag_width = 10;
+
+    std::cout << "--------------------------------------------------" << std::endl;
+    std::cout << "| " << std::left << std::setw(fd_width) << "fd"
+              << "| " << std::setw(ip_width) << "ip"
+              << "| " << std::setw(flag_width) << "flag" << "|" << std::endl;
+    std::cout << "--------------------------------------------------" << std::endl;
+
     for (const auto &client : active_clients)
     {
-        std::cout << "Server client fd: " << client.fd
-                  << ", ip: " << client.ip
-                  << ", flag: " << client.flag << std::endl;
+        std::cout << "| " << std::left << std::setw(fd_width) << client.fd
+                  << "| " << std::setw(ip_width) << client.ip
+                  << "| " << std::setw(flag_width) << client.flag << "|" << std::endl;
     }
+
+    std::cout << "--------------------------------------------------" << std::endl;
 }
 
 void ipc_update_client(int fd, bool new_flag)

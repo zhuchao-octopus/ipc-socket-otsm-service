@@ -648,7 +648,8 @@ void ipc_redirect_log_to_file()
 {
 // 重定向 stdout 到文件
 #if 1
-     freopen("/tmp/octopus_ipc_client.log", "w", stdout);
+   if (ipc_file_exists_and_executable(ipc_server_path_name))
+      freopen("/tmp/octopus_ipc_client.log", "w", stdout);
     //  freopen("/tmp/octopus_ipc_client.log", "w", stderr);
 #else
     // 打开日志文件，按追加模式写入
@@ -721,7 +722,7 @@ void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
 {
     // Make a copy of the message because the lambda will run asynchronously and possibly after the original goes out of scope.
     DataMessage copied_msg = message;
-
+    //message.printMessage("Client");
     // Enqueue a delayed task into the thread pool that will execute after 'delay_ms' milliseconds.
     g_threadPool.enqueue_delayed([copied_msg,delay_ms]() mutable
     {
@@ -750,9 +751,10 @@ void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
         if(delay_ms > 0)
         {
            
-        std::cout << "App: Message sent successfully after waiting " << waited_ms << " ms for socket to be ready.\n";
+        std::cout << "Client: Message sent successfully after waiting " << waited_ms << "delay " << delay_ms <<" ms for socket to be ready.\n";
 
         }
+        //copied_msg.printMessage("Client");
         // At this point, socket is valid; serialize and send the message
         std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
         client.send_query(socket_client.load(), serialized_data);
