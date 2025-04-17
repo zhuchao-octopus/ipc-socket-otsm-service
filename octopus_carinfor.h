@@ -119,6 +119,8 @@ extern "C"
         uint16_t speed_real;            // Actual speed (0.1 km/h)
         uint16_t rpm;                   // RPM (offset: -20000)
         uint8_t voltageSystem;          // Voltage system: 0x01:36V  0x02:48V  0x04:60V  0x08:64V  0x10:72V  0x20:80V  0x40:84V  0x80:96V
+        uint8_t gear;                   // Gear information
+        uint32_t odo;                   // Odometer (0.1 km)
     } carinfo_meter_t;
 
 #pragma pack(push, 1)
@@ -134,12 +136,19 @@ extern "C"
         uint8_t ready;                  // Ready status
         uint8_t charge;                 // Charging status
         uint8_t parking;                // Parking status
+        
         uint8_t ecuFault;               // ECU fault status
         uint8_t sensorFault;            // Sensor fault status
         uint8_t motorFault;             // Motor fault status
+       
+        uint8_t fuse_fault;             // Fuse fault status (0: OK, 1: Fault, others: reserved)
+        uint8_t plug_fault;             // Charging plug fault status
+        uint8_t battery_fault;          // Battery fault status
+        uint8_t brake_fault;            // Brake fault status
+        uint8_t throttle_fault;         // Throttle fault status
+
         uint8_t bt;                     // Bluetooth indicator status
         uint8_t wifi;                   // Wi-Fi indicator status
-
     } carinfo_indicator_t;
 
     typedef struct

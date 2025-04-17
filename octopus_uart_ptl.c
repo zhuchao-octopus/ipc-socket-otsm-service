@@ -32,8 +32,8 @@
 /*******************************************************************************
  * DEBUG SWITCH MACROS
  */
-// #define TEST_LOG_DEBUG_PTL_RX_FRAME  // Enable debugging for receiving frames
-#define TEST_LOG_DEBUG_PTL_TX_FRAME // Enable debugging for transmitting frames
+#define TEST_LOG_DEBUG_PTL_RX_FRAME  // Enable debugging for receiving frames
+//#define TEST_LOG_DEBUG_PTL_TX_FRAME // Enable debugging for transmitting frames
 
 /*******************************************************************************
  * MACROS
@@ -593,8 +593,9 @@ void ptl_proc_valid_frame(uint8_t *data, uint16_t length)
     // If module handler exists, call the receive handler
     if (NULL != module_)
     {
+        tx_frame->size = 0;
         bool res = module_->receive_handler(&payload, tx_frame);
-        if (res)
+        if (res && tx_frame->size > 0)
         {
             // If the handler succeeds, clear error flag and restart timer
             lb_com_error = false;

@@ -51,6 +51,7 @@ extern "C"
         MSG_DEVICE_HANDSHAKE_EVENT = 0xA7,
         MSG_DEVICE_BLE_EVENT = 0xA8,
         MSG_DEVICE_CAN_EVENT = 0xA9,
+        MSG_DEVICE_CAR_INFOR_EVENT = 0xAA,
     } MsgId_t;
 
     /*******************************************************************************

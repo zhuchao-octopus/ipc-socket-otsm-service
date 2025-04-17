@@ -74,7 +74,7 @@ extern "C"
      */
     typedef enum
     {
-        /* MCU -> APP module IDs */
+        /* MCU -> APP(SOC) module IDs */
         M2A_MOD_SYSTEM = 0x00,    ///< System initialization
         M2A_MOD_UPDATE = 0x01,    ///< System update
         M2A_MOD_TRANSFER = 0x02,  ///< Data transfer
@@ -84,7 +84,7 @@ extern "C"
         M2A_MOD_SETUP = 0x06,     ///< Settings
         M2A_MOD_KEY = 0x07,       ///< KEY
 
-        /* APP -> MCU module IDs */
+        /* APP(SOC) -> MCU module IDs */
         A2M_MOD_SYSTEM = 0x80,    ///< System initialization
         A2M_MOD_UPDATE = 0x81,    ///< System update
         A2M_MOD_TRANSFER = 0x82,  ///< Data transfer
@@ -96,12 +96,13 @@ extern "C"
         A2M_MOD_IPC = 0x88,       ///< IPC socket
 
         P2M_MOD_DEBUG = 0xF0, ///< DEBUG
-        /* Range definitions for validity checks */
-        M2A_MOD_START = M2A_MOD_SYSTEM,
-        M2A_MOD_END = M2A_MOD_KEY,
-        A2M_MOD_START = A2M_MOD_SYSTEM,
-        A2M_MOD_END = A2M_MOD_KEY
     } ptl_frame_type_t;
+
+        /* Range definitions for validity checks */
+        #define M2A_MOD_START M2A_MOD_SYSTEM
+        #define M2A_MOD_END M2A_MOD_KEY
+        #define A2M_MOD_START A2M_MOD_SYSTEM
+        #define A2M_MOD_END A2M_MOD_KEY
 
     /**
      * @brief Enumeration for commands within each module.

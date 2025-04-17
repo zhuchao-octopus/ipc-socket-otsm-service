@@ -156,11 +156,10 @@ void app_carinfo_running(void)
     app_car_controller_sif_updating();
 #endif
 
+#ifdef TASK_MANAGER_STATE_MACHINE_MCU
     if (GetTickCounter(&l_t_msg_wait_50_timer) < 10)
         return;
     StartTickCounter(&l_t_msg_wait_50_timer);
-
-#ifdef TASK_MANAGER_STATE_MACHINE_MCU
     app_car_controller_msg_handler();
 #endif
 }
@@ -203,58 +202,70 @@ uint16_t app_carinfo_getSpeed(void)
 
 carinfo_indicator_t *app_carinfo_get_indicator_info(void)
 {
-    lt_indicator.leftTurn = 0x03;
-    lt_indicator.wifi = 0x0f;
+    // lt_indicator.leftTurn = 0x03;
+    // lt_indicator.wifi = 0x0f;
     return &lt_indicator;
 }
 
 carinfo_meter_t *app_carinfo_get_meter_info(void)
 {
-    lt_meter.soc=1;
-    lt_meter.speed_real=30;
+    // lt_meter.soc=1;
+    // lt_meter.speed_real=30;
     return &lt_meter;
 }
 
 carinfo_drivinfo_t *app_carinfo_get_drivinfo_info(void)
 {
-    lt_drivinfo.gear = (carinfo_drivinfo_gear_t)8;
+    // lt_drivinfo.gear = (carinfo_drivinfo_gear_t)8;
     return &lt_drivinfo;
 }
 
 /*******************************************************************************
  * LOCAL FUNCTIONS IMPLEMENTATION
  */
+// This function handles the sending of METER module data through the protocol layer.
+// Depending on the frame type and command, it constructs appropriate data and fills the buffer for transmission.
 bool meter_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff)
 {
-    assert(buff);
-    uint8_t tmp[16] = {0};
+    assert(buff); // Ensure the buffer pointer is valid
+
+    uint8_t tmp[16] = {0}; // Temporary buffer to hold payload data
+
+    // Process M2A (Module to Application) frame
     if (M2A_MOD_METER == frame_type)
     {
         switch (param1)
         {
         case CMD_MODMETER_RPM_SPEED:
-            tmp[0] = MSB_WORD(lt_meter.speed_real);
-            tmp[1] = LSB_WORD(lt_meter.speed_real);
-            tmp[2] = MSB_WORD(lt_meter.rpm);
-            tmp[3] = LSB_WORD(lt_meter.rpm);
+            // Fill speed and RPM values into payload
+            tmp[0] = MSB_WORD(lt_meter.speed_real); // High byte of real speed
+            tmp[1] = LSB_WORD(lt_meter.speed_real); // Low byte of real speed
+            tmp[2] = MSB_WORD(lt_meter.rpm);        // High byte of RPM
+            tmp[3] = LSB_WORD(lt_meter.rpm);        // Low byte of RPM
+
+            // Build protocol frame with data
             ptl_build_frame(M2A_MOD_METER, CMD_MODMETER_RPM_SPEED, tmp, 4, buff);
             return true;
+
         case CMD_MODMETER_SOC:
-            // ACK, no thing to do
-            tmp[0] = lt_meter.soc;
-            tmp[1] = MSB_WORD(lt_meter.voltage);
-            tmp[2] = LSB_WORD(lt_meter.voltage);
-            tmp[3] = MSB_WORD(lt_meter.current);
-            tmp[4] = LSB_WORD(lt_meter.current);
-            tmp[5] = lt_meter.voltageSystem;
-            tmp[6] = 0;
-            // PRINT("SOC %d  V %d C %d adc %d\r\n",lt_meter.soc,lt_meter.voltage,lt_meter.current,SensorAdc_Get_BatVal());
+            // Fill SOC, voltage, and current info into payload
+            tmp[0] = lt_meter.soc;               // State of charge (SOC)
+            tmp[1] = MSB_WORD(lt_meter.voltage); // High byte of voltage
+            tmp[2] = LSB_WORD(lt_meter.voltage); // Low byte of voltage
+            tmp[3] = MSB_WORD(lt_meter.current); // High byte of current
+            tmp[4] = LSB_WORD(lt_meter.current); // Low byte of current
+            tmp[5] = lt_meter.voltageSystem;     // System voltage
+            tmp[6] = 0;                          // Reserved or unused byte
+
+            // Construct and send protocol frame
             ptl_build_frame(M2A_MOD_METER, CMD_MODMETER_SOC, tmp, 7, buff);
             return true;
+
         default:
             break;
         }
     }
+    // Handle Application to Module (A2M) frame — not expected for send
     else if (A2M_MOD_METER == frame_type)
     {
         switch (param1)
@@ -267,98 +278,136 @@ bool meter_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uin
             break;
         }
     }
-    return false;
+
+    return false; // Unsupported frame or command
 }
 
+// This function handles reception of METER module data from protocol layer.
+// It parses incoming payload and updates the corresponding meter information.
 bool meter_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff)
 {
-    assert(payload);
-    assert(ackbuff);
-#ifndef CARINFOR_PTL_NO_ACK // no ack
-    uint8_t tmp = 0;
+    assert(payload); // Ensure the payload pointer is valid
+    assert(ackbuff); // Ensure the ack buffer pointer is valid
+
+#ifndef CARINFOR_PTL_NO_ACK
+    uint8_t tmp = 0; // Temporary buffer for ACK content
 #endif
+
+    // Handle A2M (Application to Module) frames — usually ACKs or control commands
     if (A2M_MOD_METER == payload->frame_type)
     {
         switch (payload->cmd)
         {
         case CMD_MODMETER_RPM_SPEED:
-            // ACK, no thing to do
+            // No action needed — likely an ACK
             return false;
         case CMD_MODMETER_SOC:
-            // ACK, no thing to do
+            // No action needed — likely an ACK
             return false;
         default:
             break;
         }
     }
+    // Handle M2A (Module to Application) frames — actual data updates
     else if (M2A_MOD_METER == payload->frame_type)
     {
         switch (payload->cmd)
         {
         case CMD_MODMETER_RPM_SPEED:
-            // LOGIC
+            // Extract real speed and RPM from received data
             lt_meter.speed_real = MK_WORD(payload->data[0], payload->data[1]);
             lt_meter.rpm = MK_WORD(payload->data[2], payload->data[3]);
+
+            // Optionally calculate displayed speed (e.g., with a scaling factor)
             lt_meter.speed = lt_meter.speed_real * 11 / 10;
-            // ACK
-#ifndef CARINFOR_PTL_NO_ACK // no ack
+
+#ifndef CARINFOR_PTL_NO_ACK
+            // Respond with ACK
             tmp = 0x01;
             ptl_build_frame(A2M_MOD_METER, CMD_MODMETER_RPM_SPEED, &tmp, 1, ackbuff);
 #endif
+            // Notify other components that new meter info is available
+            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_METER_INFO, 0);
             return true;
+
         case CMD_MODMETER_SOC:
-            // LOGIC
+            // Extract SOC, voltage, current, and system voltage
             lt_meter.soc = payload->data[0];
             lt_meter.voltage = MK_WORD(payload->data[1], payload->data[2]);
             lt_meter.current = MK_WORD(payload->data[3], payload->data[4]);
             lt_meter.voltageSystem = payload->data[5];
-            // ACK
-#ifndef CARINFOR_PTL_NO_ACK // no ack
+
+#ifndef CARINFOR_PTL_NO_ACK
+            // Respond with ACK
             tmp = 0x01;
             ptl_build_frame(A2M_MOD_METER, CMD_MODMETER_SOC, &tmp, 1, ackbuff);
 #endif
+            // Notify other components that new meter info is available
+            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_METER_INFO, 0);
+
             return true;
+
         default:
             break;
         }
     }
-    return false;
+
+    return false; // Unsupported frame type or command
 }
 
+/**
+ * @brief Handles sending messages related to the indicator module.
+ *
+ * @param frame_type The type of protocol frame (e.g., M2A_MOD_INDICATOR).
+ * @param param1 Command ID (e.g., CMD_MODINDICATOR_INDICATOR).
+ * @param param2 Reserved or additional parameters (unused here).
+ * @param buff Output buffer where the protocol frame is constructed.
+ * @return true if the message was handled and frame was built successfully.
+ * @return false if the frame_type or command is not supported.
+ */
 bool indicator_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff)
 {
-    assert(buff);
-    uint8_t tmp[16] = {0};
+    assert(buff); // Ensure buffer pointer is not null
+
+    uint8_t tmp[16] = {0}; // Temporary buffer to hold encoded indicator states
+
     if (M2A_MOD_INDICATOR == frame_type)
     {
         switch (param1)
         {
         case CMD_MODINDICATOR_INDICATOR:
-            lt_indicator.highBeam ? SetBit(tmp[0], 0) : ClrBit(tmp[0], 0);    // Զ���
-            lt_indicator.lowBeam ? SetBit(tmp[0], 1) : ClrBit(tmp[0], 1);     // �����
-            lt_indicator.position ? SetBit(tmp[0], 2) : ClrBit(tmp[0], 2);    // λ�õ�
-            lt_indicator.frontFog ? SetBit(tmp[0], 3) : ClrBit(tmp[0], 3);    // ǰ����
-            lt_indicator.rearFog ? SetBit(tmp[0], 4) : ClrBit(tmp[0], 4);     // ������
-            lt_indicator.leftTurn ? SetBit(tmp[0], 5) : ClrBit(tmp[0], 5);    // ��ת��
-            lt_indicator.rightTurn ? SetBit(tmp[0], 6) : ClrBit(tmp[0], 6);   // ��ת��
-            lt_indicator.ready ? SetBit(tmp[0], 7) : ClrBit(tmp[0], 7);       // Ready��
-            lt_indicator.charge ? SetBit(tmp[1], 0) : ClrBit(tmp[1], 0);      // ��س�ŵ��
-            lt_indicator.parking ? SetBit(tmp[1], 1) : ClrBit(tmp[1], 1);     // פ����
-            lt_indicator.ecuFault ? SetBit(tmp[1], 2) : ClrBit(tmp[1], 2);    // ECU���ϵ�
-            lt_indicator.sensorFault ? SetBit(tmp[1], 3) : ClrBit(tmp[1], 3); // ���������ϵ�
-            lt_indicator.motorFault ? SetBit(tmp[1], 4) : ClrBit(tmp[1], 4);  // ������ϵ�
+            // Pack each bit in tmp[] to represent individual indicator light states
+            lt_indicator.highBeam ? SetBit(tmp[0], 0) : ClrBit(tmp[0], 0);
+            lt_indicator.lowBeam ? SetBit(tmp[0], 1) : ClrBit(tmp[0], 1);
+            lt_indicator.position ? SetBit(tmp[0], 2) : ClrBit(tmp[0], 2);
+            lt_indicator.frontFog ? SetBit(tmp[0], 3) : ClrBit(tmp[0], 3);
+            lt_indicator.rearFog ? SetBit(tmp[0], 4) : ClrBit(tmp[0], 4);
+            lt_indicator.leftTurn ? SetBit(tmp[0], 5) : ClrBit(tmp[0], 5);
+            lt_indicator.rightTurn ? SetBit(tmp[0], 6) : ClrBit(tmp[0], 6);
+            lt_indicator.ready ? SetBit(tmp[0], 7) : ClrBit(tmp[0], 7);
+
+            lt_indicator.charge ? SetBit(tmp[1], 0) : ClrBit(tmp[1], 0);
+            lt_indicator.parking ? SetBit(tmp[1], 1) : ClrBit(tmp[1], 1);
+            lt_indicator.ecuFault ? SetBit(tmp[1], 2) : ClrBit(tmp[1], 2);
+            lt_indicator.sensorFault ? SetBit(tmp[1], 3) : ClrBit(tmp[1], 3);
+            lt_indicator.motorFault ? SetBit(tmp[1], 4) : ClrBit(tmp[1], 4);
+
+            // Build protocol frame with indicator data
             ptl_build_frame(M2A_MOD_INDICATOR, CMD_MODINDICATOR_INDICATOR, tmp, 5, buff);
             return true;
+
         case CMD_MODINDICATOR_ERROR_INFO:
-            // TODO
+            // TODO: Future expansion - error info sending
             ptl_build_frame(M2A_MOD_INDICATOR, CMD_MODINDICATOR_ERROR_INFO, tmp, 5, buff);
             return true;
+
         default:
             break;
         }
     }
     else if (A2M_MOD_INDICATOR == frame_type)
     {
+        // For commands coming from MCU to Application, no need to respond here
         switch (param1)
         {
         case CMD_MODINDICATOR_INDICATOR:
@@ -369,25 +418,37 @@ bool indicator_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1,
             break;
         }
     }
+
     return false;
 }
 
+/**
+ * @brief Handles received messages related to the indicator module.
+ *
+ * @param payload Incoming protocol frame payload.
+ * @param ackbuff Buffer to store ACK response if required.
+ * @return true if the frame was successfully handled.
+ * @return false if the frame or command is not recognized or requires no action.
+ */
 bool indicator_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff)
 {
-    assert(payload);
-    assert(ackbuff);
-#ifndef CARINFOR_PTL_NO_ACK // no ack
-    uint8_t tmp = 0;
+    assert(payload); // Ensure payload is not null
+    assert(ackbuff); // Ensure ack buffer is not null
+
+#ifndef CARINFOR_PTL_NO_ACK
+    uint8_t tmp = 0; // Temporary variable to send ACK byte if needed
 #endif
+
     if (A2M_MOD_INDICATOR == payload->frame_type)
     {
+        // Received from MCU to Application, usually an ACK
         switch (payload->cmd)
         {
         case CMD_MODINDICATOR_INDICATOR:
-            // ACK, no thing to do
+            // ACK received, nothing to process
             return false;
         case CMD_MODINDICATOR_ERROR_INFO:
-            // ACK, no thing to do
+            // ACK received, nothing to process
             return false;
         default:
             break;
@@ -395,38 +456,49 @@ bool indicator_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buf
     }
     else if (M2A_MOD_INDICATOR == payload->frame_type)
     {
+        // Received from Application to MCU - decode and update indicator states
         switch (payload->cmd)
         {
         case CMD_MODINDICATOR_INDICATOR:
-            // LOGIC
-            lt_indicator.highBeam = GetBit(payload->data[0], 0);    // Զ���
-            lt_indicator.lowBeam = GetBit(payload->data[0], 1);     // �����
-            lt_indicator.position = GetBit(payload->data[0], 2);    // λ�õ�
-            lt_indicator.frontFog = GetBit(payload->data[0], 3);    // ǰ����
-            lt_indicator.rearFog = GetBit(payload->data[0], 4);     // ������
-            lt_indicator.leftTurn = GetBit(payload->data[0], 5);    // ��ת��
-            lt_indicator.rightTurn = GetBit(payload->data[0], 6);   // ��ת��
-            lt_indicator.ready = GetBit(payload->data[0], 7);       // Ready��
-            lt_indicator.charge = GetBit(payload->data[1], 0);      // ��س�ŵ��
-            lt_indicator.parking = GetBit(payload->data[1], 1);     // פ����
-            lt_indicator.ecuFault = GetBit(payload->data[1], 2);    // ECU���ϵ�
-            lt_indicator.sensorFault = GetBit(payload->data[1], 3); // ���������ϵ�
-            lt_indicator.motorFault = GetBit(payload->data[1], 4);  // ������ϵ�
-#ifndef CARINFOR_PTL_NO_ACK                                         // no ack
+            // Parse bitfields from received payload to update lt_indicator states
+            lt_indicator.highBeam = GetBit(payload->data[0], 0);  // High beam
+            lt_indicator.lowBeam = GetBit(payload->data[0], 1);   // Low beam
+            lt_indicator.position = GetBit(payload->data[0], 2);  // Position light
+            lt_indicator.frontFog = GetBit(payload->data[0], 3);  // Front fog light
+            lt_indicator.rearFog = GetBit(payload->data[0], 4);   // Rear fog light
+            lt_indicator.leftTurn = GetBit(payload->data[0], 5);  // Left turn signal
+            lt_indicator.rightTurn = GetBit(payload->data[0], 6); // Right turn signal
+            lt_indicator.ready = GetBit(payload->data[0], 7);     // Ready status
+
+            lt_indicator.charge = GetBit(payload->data[1], 0);      // Charging status
+            lt_indicator.parking = GetBit(payload->data[1], 1);     // Parking status
+            lt_indicator.ecuFault = GetBit(payload->data[1], 2);    // ECU fault
+            lt_indicator.sensorFault = GetBit(payload->data[1], 3); // Sensor fault
+            lt_indicator.motorFault = GetBit(payload->data[1], 4);  // Motor fault
+
+#ifndef CARINFOR_PTL_NO_ACK
+            // Send back ACK response if ACK is enabled
             tmp = 0x01;
             ptl_build_frame(A2M_MOD_INDICATOR, CMD_MODINDICATOR_INDICATOR, &tmp, 1, ackbuff);
 #endif
+            //LOG_LEVEL("frame_type=%02x cmd=%02x,length=%d data[]=", payload->frame_type, payload->cmd, payload->data_len);
+            //LOG_BUFF(payload->data, payload->data_len);
+            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_INDICATOR_INFO, 0);
             return true;
+
         case CMD_MODINDICATOR_ERROR_INFO:
-#ifndef CARINFOR_PTL_NO_ACK // no ack
+#ifndef CARINFOR_PTL_NO_ACK
+            // ACK for error info command
             tmp = 0x01;
             ptl_build_frame(A2M_MOD_INDICATOR, CMD_MODINDICATOR_ERROR_INFO, &tmp, 1, ackbuff);
 #endif
+
             return true;
         default:
             break;
         }
     }
+
     return false;
 }
 
@@ -490,6 +562,7 @@ bool drivinfo_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff
             tmp = 0x01;
             ptl_build_frame(A2M_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, &tmp, 1, ackbuff);
 #endif
+            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_DRIVINFO_INFO, 0);
             return true;
         default:
             break;
@@ -574,10 +647,10 @@ void app_car_controller_sif_updating(void)
 void app_car_controller_msg_handler(void)
 {
 
-    lt_indicator.position = GPIO_PIN_READ_SKD() ? 0 : 1;  /* ʾ���� */
-    lt_indicator.highBeam = GPIO_PIN_READ_DDD() ? 0 : 1;  /* ���   */
-    lt_indicator.leftTurn = GPIO_PIN_READ_ZZD() ? 0 : 1;  /* ��ת�� */
-    lt_indicator.rightTurn = GPIO_PIN_READ_YZD() ? 0 : 1; /* ��ת�� */
+    lt_indicator.position = GPIO_PIN_READ_SKD() ? 0 : 1;
+    lt_indicator.highBeam = GPIO_PIN_READ_DDD() ? 0 : 1;
+    lt_indicator.leftTurn = GPIO_PIN_READ_ZZD() ? 0 : 1;
+    lt_indicator.rightTurn = GPIO_PIN_READ_YZD() ? 0 : 1;
 
     lt_indicator.ready = !lt_sif.bootGuard;
 

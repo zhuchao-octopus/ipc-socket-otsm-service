@@ -23,7 +23,7 @@
  * Enable debug logging for specific events during UART operations.
  */
 #define TEST_LOG_DEBUG_UART_RX_DATA
-#define TEST_LOG_DEBUG_UART_TX_DATA
+// #define TEST_LOG_DEBUG_UART_TX_DATA
 /*******************************************************************************
  * MACROS
  * Define commonly used constants and values for UART operations.
@@ -57,6 +57,10 @@ static uint8_t uart_rx_fifo_buff[cFifo_ObjSize(FIFO_BUFFER_MAX_SIZE)];
 static void hal_com_uart_receive_callback(uart_Evt_t *pev);
 #elif defined(PLATFORM_ITE_OPEN_RTOS)
 static void hal_com_uart_receive_callback(void *arg1, uint32_t arg2);
+#elif defined(PLATFORM_LINUX_RISC)
+static void hal_com_uart_receive_callback(const uint8_t *data, int length);
+#else
+static void hal_com_uart_receive_callback(const uint8_t *data, int length);
 #endif
 
 /*******************************************************************************
@@ -269,40 +273,46 @@ void *hal_com_uart_event_handler(void *arg)
 }
 
 #elif defined(PLATFORM_LINUX_RISC)
-SerialPortHandle serial = NULL;
-static void hal_com_uart_receive_callback(const char *data, int length)
-{
-    uint16_t i;
-#ifdef TEST_LOG_DEBUG_UART_RX_DATA
-    LOG_BUFF_LEVEL(data, length);
-    ///LOG_NONE("\r\n");
-#endif
-    for (i = 0; i < length; i++)
-    {
-        cFifo_Push(usart_rx_fifo, data[i]);
-    }
-}
-
+static SerialPortHandle linux_uart_serial_handle = NULL;
 void hal_uart_init(void)
 {
     cFifo_Init(&usart_rx_fifo, uart_rx_fifo_buff, sizeof(uart_rx_fifo_buff));
-    SerialPortHandle serial = serialport_create("/dev/ttyS1", 115200);
-    if (!serial)
+    linux_uart_serial_handle = serialport_create("/dev/ttyS3", 115200);
+    if (!linux_uart_serial_handle)
     {
         LOG_LEVEL("Failed to open serial port.\r\n");
         return;
     }
-    serialport_set_callback(serial, hal_com_uart_receive_callback);
+    LOG_LEVEL("hal uart /dev/ttyS3 init for protocol\r\n");
+
+    bool bret = serialport_set_callback(linux_uart_serial_handle, hal_com_uart_receive_callback);
+    if (bret)
+        LOG_LEVEL("uart /dev/ttyS3 opened successfully.\r\n");
+
+    //uint8_t test_help[] = {0xaa, 0xf0, 0x00, 0x02, 0x64, 0x00, 0x00, 0x9c};
+    //hal_com_uart_send_buffer(test_help, sizeof(test_help)); // for test
 }
 
 void hal_com_uart_init(uint8_t task_id)
 {
-    LOG_LEVEL("hal uart2 init for protocol\r\n");
+    // LOG_LEVEL("hal uart2 init for protocol\r\n");
     hal_uart_init();
 }
 
 void *hal_com_uart_event_handler(void *arg)
 {
+}
+
+static void hal_com_uart_receive_callback(const uint8_t *data, int length)
+{
+    uint16_t i;
+#ifdef TEST_LOG_DEBUG_UART_RX_DATA
+    LOG_BUFF_LEVEL(data, length);
+#endif
+    for (i = 0; i < length; i++)
+    {
+        cFifo_Push(usart_rx_fifo, data[i]);
+    }
 }
 #else
 
@@ -374,8 +384,8 @@ uint8_t hal_com_uart_send_string(const char *str, uint8_t length)
     ret_code = write(PROTOCOL_UART_PORT, str, length);
 #endif
 #ifdef PLATFORM_LINUX_RISC
-    if (!serial)
-        ret_code = serialport_write(serial, str);
+    if (linux_uart_serial_handle)
+        ret_code = serialport_write(linux_uart_serial_handle, str, length);
 #endif
     return ret_code;
 }
@@ -388,10 +398,10 @@ uint8_t hal_com_uart_send_string(const char *str, uint8_t length)
  */
 uint8_t hal_com_uart_send_buffer(uint8_t *buff, uint16_t length)
 {
-    uint8_t ret_code = length;
+    uint8_t ret_code = 0;
 #ifdef TEST_LOG_DEBUG_UART_TX_DATA
     LOG_BUFF_LEVEL(buff, length);
-    ///LOG_NONE("\r\n");
+    /// LOG_NONE("\r\n");
 #endif
 #ifdef PLATFORM_CST_OSAL_RTOS
     ret_code = HalUartSendBuf(UART1, buff, length);
@@ -400,9 +410,14 @@ uint8_t hal_com_uart_send_buffer(uint8_t *buff, uint16_t length)
 #ifdef PLATFORM_ITE_OPEN_RTOS
     ret_code = write(PROTOCOL_UART_PORT, buff, length);
 #endif
+
 #ifdef PLATFORM_LINUX_RISC
-    if (!serial)
-        ret_code = serialport_write(serial, buff);
+    if (linux_uart_serial_handle)
+        ret_code = serialport_write(linux_uart_serial_handle, buff, length);
+    else
+        LOG_LEVEL("write failed linux_uart_serial_handle==null\r\n");
+
+    //LOG_LEVEL("serialport_write ret_code=%d\r\n", ret_code);
 #endif
     return ret_code;
 }
