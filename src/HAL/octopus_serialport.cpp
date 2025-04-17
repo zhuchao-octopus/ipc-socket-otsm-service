@@ -172,12 +172,14 @@ int SerialPort::writeData(const uint8_t *buffer, size_t length)
     if (bytesWritten == static_cast<ssize_t>(length))
     {
         // Log the data in hex format for debugging
-        // std::cout << "[Serial Write] Success: ";
-        // for (size_t i = 0; i < length; ++i)
-        // {
-        //    printf("%02X ", buffer[i]);
-        // }
-        // std::cout << std::endl;
+        #if 0
+         std::cout << "[Serial Write] Success: ";
+         for (size_t i = 0; i < length; ++i)
+         {
+            printf("%02X ", buffer[i]);
+         }
+         std::cout << std::endl;
+         #endif
         return bytesWritten;
     }
     else

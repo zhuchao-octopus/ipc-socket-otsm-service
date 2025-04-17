@@ -41,33 +41,31 @@ typedef int (*TaskManagerStateDoCommandFunc)(uint8_t *, uint8_t);
 
 typedef void (*TaskManagerStateRegistCallbackFunc)(CarInforCallback_t callback);
 typedef void (*TaskManagerStateStopRunningFunc)();
-
 typedef void (*TaskManagerState_set_message_push_delay)(uint16_t delay_ms);
 
-TaskManagerStateStopRunningFunc taskManagerStateStopRunning = NULL;
-TaskManagerStateDoCommandFunc taskManagerStateDoCommand = NULL;
-TaskManagerStateRegistCallbackFunc taskManagerStateRegistCallbackFunc = NULL;
+typedef carinfo_meter_t *(*T_otsm_get_meter_info)();
+typedef carinfo_indicator_t *(*T_otsm_get_indicator_info)();
+typedef carinfo_drivinfo_t *(*T_otsm_get_drivinfo_info)();
 
+TaskManagerStateStopRunningFunc otsm_taskManagerStateStopRunning = NULL;
+TaskManagerStateDoCommandFunc otsm_taskManagerStateDoCommand = NULL;
+TaskManagerStateRegistCallbackFunc otsm_taskManagerStateRegistCallbackFunc = NULL;
 TaskManagerState_set_message_push_delay ostsm_set_message_push_delay = NULL;
 
-typedef carinfo_meter_t *(*otsm_get_meter_info)();
-typedef carinfo_indicator_t *(*otsm_get_indicator_info)();
-typedef carinfo_drivinfo_t *(*otsm_get_drivinfo_info)();
-
-otsm_get_meter_info get_meter_info = NULL;
-otsm_get_indicator_info get_indicator_info = NULL;
-otsm_get_drivinfo_info get_drivinfo_info = NULL;
+T_otsm_get_meter_info otsm_get_meter_info = NULL;
+T_otsm_get_indicator_info otsm_get_indicator_info = NULL;
+T_otsm_get_drivinfo_info otsm_get_drivinfo_info = NULL;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to handle client communication
-void CarInforNotify_Callback(int cmd_parameter);
-void notify_carInfor_to_client(int client_fd, int cmd);
-void handle_client(int client_fd);
+void ipc_CarInforNotify_Callback(int cmd_parameter);
+void ipc_notify_carInfor_to_client(int client_fd, int cmd);
+void ipc_handle_client(int client_fd);
 
-int handle_calculation(int client_fd, const DataMessage &query_msg);
-int handle_car_infor(int client_fd, const DataMessage &query_msg);
-int handle_help(int client_fd, const DataMessage &query_msg);
-int handle_config(int client_fd, const DataMessage &query_msg);
+int ipc_handle_calculation(int client_fd, const DataMessage &query_msg);
+int ipc_handle_car_infor(int client_fd, const DataMessage &query_msg);
+int ipc_handle_help(int client_fd, const DataMessage &query_msg);
+int ipc_handle_config(int client_fd, const DataMessage &query_msg);
 // Path for the IPC socket file
 
 const char *socket_path = "/tmp/octopus/ipc_socket";
@@ -91,13 +89,13 @@ bool ipc_socket_server_debug_print_data = false;
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // **Thread-Safe Functions**
-void add_client(int fd, const std::string &ip, bool flag)
+void ipc_add_client(int fd, const std::string &ip, bool flag)
 {
     std::lock_guard<std::mutex> lock(clients_mutex);
     active_clients.insert(ClientInfo(fd, ip, flag));
 }
 
-void remove_client(int fd)
+void ipc_remove_client(int fd)
 {
     std::lock_guard<std::mutex> lock(clients_mutex);
     for (auto it = active_clients.begin(); it != active_clients.end(); ++it)
@@ -110,7 +108,7 @@ void remove_client(int fd)
     }
 }
 
-void print_active_clients()
+void ipc_print_active_clients()
 {
     std::lock_guard<std::mutex> lock(clients_mutex);
     for (const auto &client : active_clients)
@@ -121,7 +119,7 @@ void print_active_clients()
     }
 }
 
-void update_client(int fd, bool new_flag)
+void ipc_update_client(int fd, bool new_flag)
 {
     std::lock_guard<std::mutex> lock(clients_mutex); // 线程安全
 
@@ -144,7 +142,7 @@ void update_client(int fd, bool new_flag)
         std::cerr << "Client FD not found: " << fd << std::endl;
     }
 }
-void update_client(int fd, const std::string &ip)
+void ipc_update_client(int fd, const std::string &ip)
 {
     std::lock_guard<std::mutex> lock(clients_mutex); // 线程安全
 
@@ -171,7 +169,7 @@ void update_client(int fd, const std::string &ip)
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to ensure the directory for the socket file exists
-bool ensure_directory_exists(const char *path)
+bool ipc_ensure_directory_exists(const char *path)
 {
     if (!path || strlen(path) == 0)
     {
@@ -213,12 +211,12 @@ bool ensure_directory_exists(const char *path)
 }
 
 // Function to remove the old socket file if it exists
-void remove_old_socket_bind_file()
+void ipc_remove_old_socket_bind_file()
 {
     unlink(socket_path);
 }
 
-void CarInforNotify_Callback(int cmd_parameter)
+void ipc_CarInforNotify_Callback(int cmd_parameter)
 {
     // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
     for (const auto &client : active_clients)
@@ -226,21 +224,21 @@ void CarInforNotify_Callback(int cmd_parameter)
         /// std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
         /// threads.push_back(std::move(notify_thread));
         if (client.flag) // need push callback
-            notify_carInfor_to_client(client.fd, cmd_parameter);
+            ipc_notify_carInfor_to_client(client.fd, cmd_parameter);
     }
 }
 
 // Signal handler for clean-up on interrupt (e.g., Ctrl+C)
-void signal_handler(int signum)
+void ipc_signal_handler(int signum)
 {
     std::cout << "Server Interrupt signal received. Cleaning up...\n";
     server.close_socket(socket_fd_server);
-    if (taskManagerStateStopRunning)
-        taskManagerStateStopRunning();
+    if (otsm_taskManagerStateStopRunning)
+        otsm_taskManagerStateStopRunning();
     exit(signum);
 }
 
-void initialize_otsm()
+void ipc_initialize_otsm()
 {
     // 加载共享库
     std::cout << "Server initialize otsm started." << std::endl;
@@ -254,27 +252,27 @@ void initialize_otsm()
     ///  你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
     ///  例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
 
-    taskManagerStateStopRunning = (TaskManagerStateStopRunningFunc)dlsym(handle, "TaskManagerStateStopRunning");
+    otsm_taskManagerStateStopRunning = (TaskManagerStateStopRunningFunc)dlsym(handle, "TaskManagerStateStopRunning");
 
-    if (!taskManagerStateStopRunning)
+    if (!otsm_taskManagerStateStopRunning)
     {
         std::cerr << "Server Failed to find initialize function: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    taskManagerStateDoCommand = (TaskManagerStateDoCommandFunc)dlsym(handle, "ipc_socket_doCommand");
-    if (!taskManagerStateDoCommand)
+    otsm_taskManagerStateDoCommand = (TaskManagerStateDoCommandFunc)dlsym(handle, "ipc_socket_doCommand");
+    if (!otsm_taskManagerStateDoCommand)
     {
-        std::cerr << "Server Failed to find taskManagerStateDoCommand: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_taskManagerStateDoCommand: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    taskManagerStateRegistCallbackFunc = (TaskManagerStateRegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
-    if (!taskManagerStateRegistCallbackFunc)
+    otsm_taskManagerStateRegistCallbackFunc = (TaskManagerStateRegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
+    if (!otsm_taskManagerStateRegistCallbackFunc)
     {
-        std::cerr << "Server Failed to find taskManagerStateRegistCallbackFunc: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_taskManagerStateRegistCallbackFunc: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
@@ -287,35 +285,37 @@ void initialize_otsm()
         return;
     }
 
-    get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
-    if (!get_meter_info)
+    otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
+    if (!otsm_get_meter_info)
     {
-        std::cerr << "Server Failed to find get_meter_info: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-    get_indicator_info = (carinfo_indicator_t * (*)()) dlsym(handle, "app_carinfo_get_indicator_info");
-    if (!get_indicator_info)
-    {
-        std::cerr << "Server Failed to find get_indicator_info: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_get_meter_info: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
-    if (!get_drivinfo_info)
+    otsm_get_indicator_info = (carinfo_indicator_t * (*)()) dlsym(handle, "app_carinfo_get_indicator_info");
+    if (!otsm_get_indicator_info)
     {
-        std::cerr << "Server Failed to find get_drivinfo_info: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_get_indicator_info: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    taskManagerStateRegistCallbackFunc(CarInforNotify_Callback);
+    //otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
+    otsm_get_drivinfo_info = (T_otsm_get_drivinfo_info)dlsym(handle, "app_carinfo_get_drivinfo_info");
+    if (!otsm_get_drivinfo_info)
+    {
+        std::cerr << "Server Failed to find otsm_get_drivinfo_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_taskManagerStateRegistCallbackFunc(ipc_CarInforNotify_Callback);
     /// 调用库中的初始化函数
     /// initialize_func();
 }
 
-void initialize_server()
+void ipc_initialize_server()
 {
     std::cout << "[Server] Initialization started." << std::endl;
 
@@ -323,17 +323,17 @@ void initialize_server()
     signal(SIGPIPE, SIG_IGN);
 
     // Handle Ctrl+C to allow graceful shutdown
-    signal(SIGINT, signal_handler);
+    signal(SIGINT, ipc_signal_handler);
 
     // Ensure socket directory exists
-    if (!ensure_directory_exists(socket_path))
+    if (!ipc_ensure_directory_exists(socket_path))
     {
         std::cerr << "[Server] Failed to ensure socket directory exists." << std::endl;
         return;
     }
 
     // Clean up old socket file if it exists
-    remove_old_socket_bind_file();
+    ipc_remove_old_socket_bind_file();
 
     // Create the server socket
     socket_fd_server = server.open_socket();
@@ -369,9 +369,9 @@ int main()
     LOG_CC("\n#######################################################################################");
     LOG_CC("Octopus IPC Socket Server Started Successfully.");
     ////////////////////////////////////////////////////////////////////////////////////////////////////
-    initialize_otsm();
+    ipc_initialize_otsm();
     std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
-    initialize_server();
+    ipc_initialize_server();
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     // Main loop to accept and handle client connections
@@ -391,11 +391,11 @@ int main()
         {
             /// std::lock_guard<std::mutex> lock(clients_mutex);
             /// active_clients.insert(client_fd);
-            add_client(client_fd, "", false);
+            ipc_add_client(client_fd, "", false);
         }
 
         // Create a thread to handle the client communication
-        std::thread client_thread(handle_client, client_fd);
+        std::thread client_thread(ipc_handle_client, client_fd);
 
         // Detach the thread so it runs independently
         client_thread.detach();
@@ -403,8 +403,8 @@ int main()
 
     // Close the server socket before exiting
     server.close_socket(socket_fd_server);
-    if (taskManagerStateStopRunning)
-        taskManagerStateStopRunning();
+    if (otsm_taskManagerStateStopRunning)
+        otsm_taskManagerStateStopRunning();
 
     return 0;
 }
@@ -420,7 +420,7 @@ int main()
  *
  * @param client_fd The file descriptor of the connected client socket.
  */
-void handle_client(int client_fd)
+void ipc_handle_client(int client_fd)
 {
     std::cout << "Server handling client connection [" << client_fd << "]..." << std::endl;
     int handle_result = 0;
@@ -474,26 +474,26 @@ void handle_client(int client_fd)
         switch (query_msg.group)
         {
         case MSG_GROUP_HELP:
-            handle_result = handle_help(client_fd, query_msg); // Help/info request
+            handle_result = ipc_handle_help(client_fd, query_msg); // Help/info request
             break;
 
         case MSG_GROUP_SET:
-            handle_result = handle_config(client_fd, query_msg); // Configuration command
+            handle_result = ipc_handle_config(client_fd, query_msg); // Configuration command
             break;
 
         case 2:
         case 3:
         case 4:
-            handle_result = handle_calculation(client_fd, query_msg); // Placeholder groups
+            handle_result = ipc_handle_calculation(client_fd, query_msg); // Placeholder groups
             break;
 
         case MSG_GROUP_CAR:
-            handle_result = handle_car_infor(client_fd, query_msg); // Vehicle info commands
+            handle_result = ipc_handle_car_infor(client_fd, query_msg); // Vehicle info commands
             break;
 
         default:
             // Unknown group, fallback to help
-            handle_result = handle_help(client_fd, query_msg);
+            handle_result = ipc_handle_help(client_fd, query_msg);
             break;
         }
 
@@ -507,12 +507,12 @@ cleanup:
 
     // Gracefully close the client socket and remove from active list
     close(client_fd);
-    remove_client(client_fd);
+    ipc_remove_client(client_fd);
     // server.cleanup_on_disconnect(client_fd);not good
     std::cout << "Server connection for client [" << client_fd << "] closed." << std::endl;
 }
 
-int handle_help(int client_fd, const DataMessage &query_msg)
+int ipc_handle_help(int client_fd, const DataMessage &query_msg)
 {
     // Print the parsed DataMessage for debugging purposes
     query_msg.printMessage("Server help"); // Print the incoming query message for visibility
@@ -521,7 +521,7 @@ int handle_help(int client_fd, const DataMessage &query_msg)
     std::vector<int> resp_vector(1);
 
     // Optionally print active clients to log the current client activity
-    print_active_clients();
+    ipc_print_active_clients();
     //////////////////////////////////////////////////////////////////////////////////////////////
     if ((query_msg.data.empty() || query_msg.data[0] == 1))
         ipc_socket_server_debug_print_data = true;
@@ -540,7 +540,7 @@ int handle_help(int client_fd, const DataMessage &query_msg)
     return 0;
 }
 
-int handle_config(int client_fd, const DataMessage &query_msg)
+int ipc_handle_config(int client_fd, const DataMessage &query_msg)
 {
     // Extract the file descriptor from the query data or use the provided one
     int cfd = (query_msg.data.empty() || query_msg.data[0] <= 0) ? client_fd : query_msg.data[0];
@@ -550,7 +550,7 @@ int handle_config(int client_fd, const DataMessage &query_msg)
     {
         // Update client based on the first data value
         bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
-        update_client(cfd, is_active); // Update the client state (active/inactive)
+        ipc_update_client(cfd, is_active); // Update the client state (active/inactive)
         std::cout << "Server set client [" << cfd << "] request push:" << is_active << std::endl;
     }
     else if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_PUSH_DELAY)
@@ -566,11 +566,11 @@ int handle_config(int client_fd, const DataMessage &query_msg)
     {
         // Update client based on the first data value
         // bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
-        update_client(cfd, std::string(query_msg.data.begin(), query_msg.data.end())); // Update the client state (active/inactive)
+        ipc_update_client(cfd, std::string(query_msg.data.begin(), query_msg.data.end())); // Update the client state (active/inactive)
     }
 
     // Log the current active clients
-    print_active_clients();
+    ipc_print_active_clients();
     std::cout << std::endl;
 
     // Prepare response vector with the set message group
@@ -587,7 +587,7 @@ int handle_config(int client_fd, const DataMessage &query_msg)
 }
 
 // Function to handle calculation logic
-int handle_calculation(int client_fd, const DataMessage &query_msg)
+int ipc_handle_calculation(int client_fd, const DataMessage &query_msg)
 {
     int calc_result = 0;
     std::vector<int> resp_vector(1); // Initialize response vector with one element
@@ -642,14 +642,14 @@ int handle_calculation(int client_fd, const DataMessage &query_msg)
     return calc_result;
 }
 
-int handle_car_infor(int client_fd, const DataMessage &query_msg)
+int ipc_handle_car_infor(int client_fd, const DataMessage &query_msg)
 {
-    notify_carInfor_to_client(client_fd, query_msg.msg);
+    ipc_notify_carInfor_to_client(client_fd, query_msg.msg);
     return 0;
 }
 // Helper function to handle the car info response logic
 template <typename T>
-void send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, const std::string &info_type)
+void ipc_send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, const std::string &info_type)
 {
     if (car_info == nullptr)
     {
@@ -686,26 +686,26 @@ void send_car_info_to_client(int client_fd, int msg, T *car_info, size_t size, c
 }
 
 // Main function to notify car info to the client
-void notify_carInfor_to_client(int client_fd, int cmd)
+void ipc_notify_carInfor_to_client(int client_fd, int cmd)
 {
     switch (cmd)
     {
     case CMD_GET_INDICATOR_INFO:
     {
-        carinfo_indicator_t *carinfo_indicator = get_indicator_info();
-        send_car_info_to_client(client_fd, cmd, carinfo_indicator, sizeof(carinfo_indicator_t), "handle_car_infor (Indicator)");
+        carinfo_indicator_t *carinfo_indicator = otsm_get_indicator_info();
+        ipc_send_car_info_to_client(client_fd, cmd, carinfo_indicator, sizeof(carinfo_indicator_t), "handle_car_infor (Indicator)");
         break;
     }
     case CMD_GET_METER_INFO:
     {
-        carinfo_meter_t *carinfo_meter = get_meter_info();
-        send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
+        carinfo_meter_t *carinfo_meter = otsm_get_meter_info();
+        ipc_send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
         break;
     }
     case CMD_GET_DRIVINFO_INFO:
     {
-        carinfo_drivinfo_t *carinfo_drivinfo = get_drivinfo_info();
-        send_car_info_to_client(client_fd, cmd, carinfo_drivinfo, sizeof(carinfo_drivinfo_t), "handle_car_infor (Driver)");
+        carinfo_drivinfo_t *carinfo_drivinfo = otsm_get_drivinfo_info();
+        ipc_send_car_info_to_client(client_fd, cmd, carinfo_drivinfo, sizeof(carinfo_drivinfo_t), "handle_car_infor (Driver)");
         break;
     }
     default:

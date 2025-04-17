@@ -20,11 +20,11 @@
 #include <mutex>
 #include <csignal>
 #include <chrono>
-#include "octopus_message_bus.hpp"
-#include "octopus_message_bus_c_api.h"
+
 #include "../IPC/octopus_ipc_ptl.hpp"
 #include "../IPC/octopus_logger.hpp"
-
+#include "../IPC/octopus_ipc_socket.hpp"
+#include "../IPC/octopus_ipc_threadpool.hpp" 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef __cplusplus
@@ -59,10 +59,40 @@ extern "C"
      */
     void ipc_exit_cleanup();
 
+    /**
+     * @brief Send a message immediately through the IPC mechanism.
+     *
+     * This function sends a message synchronously to the designated recipient via the
+     * inter-process communication (IPC) channel. The message is processed as soon as possible.
+     *
+     * @param message The message to be sent. This should include target task ID, message ID,
+     *                command, and optional payload.
+     */
     void ipc_send_message(DataMessage &message);
-    void ipc_send_message_queue(DataMessage &message);
-    void ipc_send_message_queue_delayed(DataMessage& message, int delay_ms);
 
+    /**
+     * @brief Send a message asynchronously by pushing it to the IPC message queue.
+     *
+     * This function places the message into a thread-safe internal queue. It is suitable
+     * for high-frequency message dispatching scenarios, ensuring that messages are processed
+     * in order without blocking the caller.
+     *
+     * @param message The message to enqueue and send asynchronously.
+     */
+    //void ipc_send_message_queue(DataMessage &message);
+
+    /**
+     * @brief Send a message into the IPC queue with a delay.
+     *
+     * This function enqueues the message but delays its dispatch for a specified time (in milliseconds).
+     * It can be used for debouncing, scheduling, or retrying messages.
+     *
+     * @param message  The message to enqueue.
+     * @param delay_ms Delay in milliseconds before the message becomes eligible for dispatch.
+     */
+    void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms);
+
+    void ipc_send_message_queue(uint8_t group, uint8_t msg, int delay, const std::vector<uint8_t> &message_data);
 #ifdef __cplusplus
 }
 #endif

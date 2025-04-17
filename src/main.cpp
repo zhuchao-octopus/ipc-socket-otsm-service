@@ -36,17 +36,16 @@ void app_ipc_socket_reesponse_callback(const DataMessage &query_msg, int size)
 void initialize_app_client()
 {
     // 加载共享库
-    std::cout << "App initialize app client library." << std::endl;
+    std::cout << "App initialize client library..." << std::endl;
     handle = dlopen("libOAPPC.so", RTLD_LAZY);
-    // handle = dlopen("libOTSM.so", RTLD_LAZY);
 
     if (!handle)
     {
-        std::cerr << "App Failed to load app client library: " << dlerror() << std::endl;
+        std::cerr << "App Failed to load client library: " << dlerror() << std::endl;
         return;
     }
 
-    RegisterCallbackFunc register_ipc_socket_callback = (RegisterCallbackFunc)dlsym(handle, "register_ipc_socket_callback");
+    RegisterCallbackFunc register_ipc_socket_callback = (RegisterCallbackFunc)dlsym(handle, "ipc_register_socket_callback");
     if (!register_ipc_socket_callback)
     {
         std::cerr << "App Failed to load register_ipc_socket_callback function: " << dlerror() << std::endl;

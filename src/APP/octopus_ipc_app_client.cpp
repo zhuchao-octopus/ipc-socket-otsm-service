@@ -15,8 +15,9 @@
 #include <algorithm> // For std::remove_if
 #include <list>
 #include "octopus_ipc_app_client.hpp"
-#include "../IPC/octopus_ipc_socket.hpp"
-#include "../IPC/octopus_ipc_threadpool.hpp" // 引入线程池头文件
+
+// #define OCTOPUS_MESSAGE_BUS
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 void ipc_redirect_log_to_file();
 
@@ -46,8 +47,10 @@ struct CallbackEntry
 
 std::list<CallbackEntry> g_named_callbacks;
 
+#ifdef OCTOPUS_MESSAGE_BUS
 // Create an instance of the message bus
 OctopusMessageBus *g_message_bus = &OctopusMessageBus::instance();
+#endif
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -68,34 +71,51 @@ bool ipc_is_process_running(const std::string &process_name)
     return found;
 }
 
+/**
+ * @brief Checks if a process with the given name is currently running on the system.
+ *
+ * This function executes the "ps aux" command to list all running processes and then
+ * scans through the output line by line to determine whether a process matching
+ * the given name exists. It also ensures that it does not falsely detect a process
+ * created by a "grep" command or similar.
+ *
+ * @param process_name The name of the process to search for.
+ * @return true if a matching process is found and is not a "grep" command; false otherwise.
+ */
 bool ipc_is_socket_server_process_running(const std::string &process_name)
 {
-    FILE *fp;
-    const size_t buffer_size = 500; // Increase buffer size to accommodate larger output
-    char buffer[buffer_size];       // Buffer to store process output
-    bool found = false;
-
-    // Open a pipe to run the ps command and get all processes
-    fp = popen("ps aux", "r");
+    // Open a pipe to run the "ps aux" command which lists all running processes.
+    FILE *fp = popen("ps aux", "r");
     if (fp == nullptr)
     {
         std::cerr << "Failed to run ps command" << std::endl;
         return false;
     }
 
-    // Read the output of ps command in chunks (buffer_size at a time)
-    while (fread(buffer, 1, buffer_size, fp) > 0)
+    // Buffer to store each line of the ps command output.
+    char line[512];
+
+    // Read the output line by line
+    while (fgets(line, sizeof(line), fp) != nullptr)
     {
-        // Check the chunk for the process name, making sure to exclude the 'grep' command itself
-        if (strstr(buffer, process_name.c_str()) != nullptr && strstr(buffer, "grep") == nullptr)
+        // Convert the line to std::string for easier processing
+        std::string line_str(line);
+
+        // Check if the line contains the target process name and is not a grep command
+        if (line_str.find(process_name) != std::string::npos &&
+            line_str.find("grep") == std::string::npos)
         {
-            found = true;
-            break;
+            // Found the process and it's not from a grep command
+            fclose(fp);
+            return true;
         }
     }
 
+    // Close the pipe after reading
     fclose(fp);
-    return found;
+
+    // Process not found
+    return false;
 }
 
 void ipc_start_process_as_server(const std::string &process_path)
@@ -143,7 +163,6 @@ void ipc_start_process_as_server(const std::string &process_path)
 void ipc_init_threadpool()
 {
     // g_threadPool = std::make_unique<OctopusThreadPool>(4, 100);
-    // g_threadPool.reset();
 }
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -498,15 +517,23 @@ __attribute__((constructor)) void ipc_app_main()
 
     // Initialize the thread pool for handling asynchronous tasks in the background
     ipc_init_threadpool();
-
+    std::cout << "Client: ipc_app_main start init\n";
+#ifdef OCTOPUS_MESSAGE_BUS
     // Start the message bus dispatcher in a separate thread
     if (g_message_bus)
         g_message_bus->start();
-
-    if (!ipc_file_exists_and_executable(ipc_server_path_name))
+#endif
+    if (!ipc_is_socket_server_process_running(ipc_server_name))
     {
-        return;
+        std::cout << "Client: IPC server is not running\n";
+        if (!ipc_file_exists_and_executable(ipc_server_path_name))
+        {
+            std::cout << "Client: IPC server does not exist or is not executable. Exiting...\n";
+            // return; // 如果在主函数中，则退出程序；否则可能需要更明确处理
+        }
     }
+
+    std::cout << "Client: IPC server is running...\n";
     // Attempt to open a Unix socket (AF_UNIX) with the specified protocol (SOCK_STREAM)
     int fd = client.open_socket(AF_UNIX, SOCK_STREAM, 0);
     socket_client.store(fd);
@@ -568,7 +595,7 @@ __attribute__((destructor)) void ipc_exit_cleanup()
         std::cout << "App: Cleanup already performed, skipping...\n";
         // return;
     }
-
+#ifdef OCTOPUS_MESSAGE_BUS
     // Stop the message bus, ensuring that it is safely stopped before continuing.
     try
     {
@@ -584,6 +611,7 @@ __attribute__((destructor)) void ipc_exit_cleanup()
     {
         std::cerr << "App: Error stopping message bus: " << e.what() << std::endl;
     }
+#endif
 
     // Safely close the socket connection
     try
@@ -620,8 +648,8 @@ void ipc_redirect_log_to_file()
 {
 // 重定向 stdout 到文件
 #if 1
-    freopen("/tmp/octopus_ipc_client.log", "w", stdout);
-    // freopen("/tmp/octopus_ipc_client.log", "w", stderr);
+     freopen("/tmp/octopus_ipc_client.log", "w", stdout);
+    //  freopen("/tmp/octopus_ipc_client.log", "w", stderr);
 #else
     // 打开日志文件，按追加模式写入
     std::ofstream log_file("/tmp/octopus_ipc_client.log", std::ios::app);
@@ -667,7 +695,7 @@ void ipc_send_message(DataMessage &message)
  *
  * @param message The DataMessage to send. Passed by reference but copied internally.
  */
-void ipc_send_message_queue(DataMessage &message)
+void ipc_send_message_queue_(DataMessage &message)
 {
     // Copy the message to ensure it remains valid when the lambda executes
     DataMessage copied_msg = message;
@@ -689,16 +717,37 @@ void ipc_send_message_queue(DataMessage &message)
         client.send_query(socket_client.load(), serialized_data); });
 }
 
-void ipc_send_message_queue_delayed(DataMessage& message, int delay_ms)
+void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
 {
     DataMessage copied_msg = message;
-    g_threadPool.enqueue_delayed([copied_msg]() mutable {
+    g_threadPool.enqueue_delayed([copied_msg]() mutable
+                                 {
         if (socket_client.load() < 0)
         {
             std::cerr << "App: Cannot send command, no active connection (delayed).\n";
             return;
         }
         std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
-        client.send_query(socket_client.load(), serialized_data);
-    }, delay_ms);
+        client.send_query(socket_client.load(), serialized_data); }, delay_ms);
+}
+
+/**
+ * @brief Sends an IPC message after a delay using basic components (group, msg, delay, data).
+ *
+ * This function assembles a DataMessage using the given parameters and calls
+ * the delayed IPC message sending function. It allows easier use without needing to
+ * expose the full DataMessage class externally.
+ *
+ * @param group         Group ID of the message.
+ * @param msg           Message ID within the group.
+ * @param delay         Delay in milliseconds before the message is dispatched.
+ * @param message_data  The payload of the message as a byte vector.
+ */
+void ipc_send_message_queue(uint8_t group, uint8_t msg, int delay, const std::vector<uint8_t> &message_data)
+{
+    // Construct the DataMessage object
+    DataMessage message(group, msg, message_data);
+
+    // Send the message using the existing delayed IPC mechanism
+    ipc_send_message_queue_delayed(message, delay);
 }
