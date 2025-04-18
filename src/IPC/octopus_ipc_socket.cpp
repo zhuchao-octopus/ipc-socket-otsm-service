@@ -95,6 +95,54 @@ void Socket::init_epoll(int socket_fd)
         epoll_initialized = true;
     }
 }
+void Socket::init_epoll()
+{
+    std::lock_guard<std::mutex> lock(epoll_mutex);
+
+    // If epoll has already been initialized, no need to recreate it
+    if (epoll_initialized)
+        return;
+
+    // Create an epoll instance using epoll_create1
+    epoll_fd = epoll_create1(0);
+    if (epoll_fd == -1)
+    {
+        std::cout << "Socket: Failed to create epoll instance (epoll_create1)\n";
+        return;
+    }
+
+    // Mark the epoll system as initialized
+    epoll_initialized = true;
+    std::cout << "Socket: Epoll instance created successfully (epoll_fd = " << epoll_fd << ")\n";
+}
+
+bool Socket::register_socket_fd(int socket_fd)
+{
+    std::lock_guard<std::mutex> lock(epoll_mutex);
+
+    // Ensure epoll has been initialized before trying to register any sockets
+    if (!epoll_initialized)
+    {
+        std::cout << "Socket: Cannot register socket fd, epoll is not initialized.\n";
+        return false;
+    }
+
+    // Configure the event: EPOLLIN means "ready to read",
+    // EPOLLET means "edge-triggered" mode (requires non-blocking IO)
+    epoll_event ev;
+    ev.events = EPOLLIN | EPOLLET;
+    ev.data.fd = socket_fd;
+
+    // Register the given socket_fd to the epoll instance
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &ev) == -1)
+    {
+        std::cout << "Socket: Failed to add socket fd to epoll (fd = " << socket_fd << ")\n";
+        return false;
+    }
+
+    std::cout << "Socket: Socket fd registered to epoll successfully (fd = " << socket_fd << ")\n";
+    return true;
+}
 
 // Open a socket for communication
 int Socket::open_socket()
@@ -123,7 +171,7 @@ int Socket::open_socket(int domain, int type, int protocol)
     if (socket_fd == -1)
     {
         int err = errno;
-        std::cerr << "Socket: Open socket failed to create socket.\n"
+        std::cout << "Socket: Open socket failed to create socket.\n"
                   << "Error: " << strerror(err) << " (errno: " << err << ")\n"
                   << "Domain: " << domain << ", Type: " << type << ", Protocol: " << protocol << std::endl;
         // close_socket(); // Ensure socket is closed if creation fails
@@ -136,8 +184,7 @@ int Socket::open_socket(int domain, int type, int protocol)
 int Socket::close_socket(int socket_fd)
 {
     close(socket_fd); // Close the socket file descriptor
-    if (socket_fd >= 0)
-        std::cout << "Socket: Close socket [" << socket_fd << "]" << std::endl;
+    std::cout << "Socket: Close socket [" << socket_fd << "]" << std::endl;
     return socket_fd;
 }
 
@@ -351,7 +398,7 @@ int Socket::send_buff(int socket_fd, char *resp_buffer, int length)
 // Connect the client to the server
 int Socket::connect_to_socket(int socket_fd)
 {
-    std::cout << "Socket: Attempting to connect to server socket at: " << addr.sun_path << std::endl;
+    std::cout << "Socket: [" << socket_fd << "] attempting to connect to server socket at: " << addr.sun_path << std::endl;
     int result = connect(socket_fd, (struct sockaddr *)&addr, sizeof(struct sockaddr_un));
     if (result == -1)
     {
