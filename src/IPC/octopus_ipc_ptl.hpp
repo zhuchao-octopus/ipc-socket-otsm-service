@@ -146,7 +146,7 @@ public:
     uint16_t header;           ///< Header for identifying the message (usually fixed)
     uint8_t group;             ///< Group ID for categorizing the message type
     uint8_t msg;               ///< Message ID within the group
-    uint16_t length;            ///< Length of the data in the message (max 255)
+    uint16_t length;           ///< Length of the data in the message (max 255)
     std::vector<uint8_t> data; ///< Message data (content of the message)
 
     /**

@@ -92,7 +92,7 @@ extern "C"
      */
     void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms);
 
-    void ipc_send_message_queue(uint8_t group, uint8_t msg, int delay, const std::vector<uint8_t> &message_data);
+    void ipc_send_message_queue(uint8_t group, uint8_t msg_id, const std::vector<uint8_t> &message_data, int delay);
 #ifdef __cplusplus
 }
 #endif

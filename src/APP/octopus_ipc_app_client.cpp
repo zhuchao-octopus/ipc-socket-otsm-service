@@ -93,7 +93,7 @@ bool ipc_is_socket_server_process_running(const std::string &process_name)
     FILE *fp = popen("ps aux", "r");
     if (fp == nullptr)
     {
-        std::cerr << "Client: Failed to run ps command" << std::endl;
+        std::cout << "Client: Failed to run ps command" << std::endl;
         return false;
     }
 
@@ -110,6 +110,7 @@ bool ipc_is_socket_server_process_running(const std::string &process_name)
         if (line_str.find(process_name) != std::string::npos && line_str.find("grep") == std::string::npos)
         {
             // Found the process and it's not from a grep command
+            std::cout << "Client: Found:"<< line_str << std::endl;
             fclose(fp);
             return true;
         }
@@ -812,15 +813,16 @@ void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
  * expose the full DataMessage class externally.
  *
  * @param group         Group ID of the message.
- * @param msg           Message ID within the group.
+ * @param msg_id           Message ID within the group.
  * @param delay         Delay in milliseconds before the message is dispatched.
  * @param message_data  The payload of the message as a byte vector.
  */
-void ipc_send_message_queue(uint8_t group, uint8_t msg, int delay, const std::vector<uint8_t> &message_data)
+void ipc_send_message_queue(uint8_t group, uint8_t msg_id, const std::vector<uint8_t> &message_data, int delay)
 {
     // Construct the DataMessage object
-    DataMessage message(group, msg, message_data);
+    DataMessage message(group, msg_id, message_data);
 
     // Send the message using the existing delayed IPC mechanism
     ipc_send_message_queue_delayed(message, delay);
 }
+
