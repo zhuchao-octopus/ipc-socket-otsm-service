@@ -484,7 +484,7 @@ void ipc_server_handle_client(int client_fd)
         }
 
         // Dispatch to the appropriate handler based on group ID
-        switch (query_msg.group)
+        switch (query_msg.msg_group)
         {
         case MSG_GROUP_HELP:
             handle_result = ipc_server_handle_help(client_fd, query_msg); // Help/info request
@@ -512,8 +512,8 @@ void ipc_server_handle_client(int client_fd)
 
         // Log success after handling the message
         std::cout << "Server handling client [" << client_fd << "] "
-                  << "[Group: " << static_cast<int>(query_msg.group) << "] "
-                  << "[Msg: " << static_cast<int>(query_msg.msg) << "] done." << std::endl;
+                  << "[Group: " << static_cast<int>(query_msg.msg_group) << "] "
+                  << "[Msg: " << static_cast<int>(query_msg.msg_id) << "] done." << std::endl;
     }
 
 cleanup:
@@ -559,7 +559,7 @@ int ipc_server_handle_config(int client_fd, const DataMessage &query_msg)
     int cfd = (query_msg.data.empty() || query_msg.data[0] <= 0) ? client_fd : query_msg.data[0];
 
     // If the message is related to IPC socket configuration, update the client status
-    if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_FLAG)
+    if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_FLAG)
     {
         // Update client based on the first data value
         bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
@@ -568,7 +568,7 @@ int ipc_server_handle_config(int client_fd, const DataMessage &query_msg)
         if((query_msg.data.size() >= 3))
              ostsm_set_message_push_delay(query_msg.data[2]*10);
     }
-    else if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_PUSH_DELAY)
+    else if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_PUSH_DELAY)
     {
         if (ostsm_set_message_push_delay)
         {
@@ -577,7 +577,7 @@ int ipc_server_handle_config(int client_fd, const DataMessage &query_msg)
             ostsm_set_message_push_delay(time_interval);
         }
     }
-    else if (query_msg.msg == MSG_IPC_SOCKET_CONFIG_IP)
+    else if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_IP)
     {
         // Update client based on the first data value
         // bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
@@ -659,7 +659,7 @@ int ipc_server_handle_calculation(int client_fd, const DataMessage &query_msg)
 
 int ipc_server_handle_car_infor(int client_fd, const DataMessage &query_msg)
 {
-    ipc_server_notify_carInfor_to_client(client_fd, query_msg.msg);
+    ipc_server_notify_carInfor_to_client(client_fd, query_msg.msg_id);
     return 0;
 }
 // Helper function to handle the car info response logic
@@ -674,13 +674,13 @@ void ipc_server_send_car_info_to_client(int client_fd, int msg, T *car_info, siz
 
     // Create a DataMessage to follow the protocol format
     DataMessage data_msg;
-    data_msg.group = MSG_GROUP_CAR; // Set appropriate group based on the info type
-    data_msg.msg = msg;             // Set message ID based on info type
+    data_msg.msg_group = MSG_GROUP_CAR; // Set appropriate group based on the info type
+    data_msg.msg_id = msg;             // Set message ID based on info type
 
     // Directly copy the car info data into the msg.data vector
     data_msg.data.clear(); // Clear any existing data
     data_msg.data.insert(data_msg.data.end(), reinterpret_cast<uint8_t *>(car_info), reinterpret_cast<uint8_t *>(car_info) + size);
-    data_msg.length = data_msg.data.size();
+    data_msg.msg_length = data_msg.data.size();
 
     // Serialize the DataMessage into the protocol format
     std::vector<uint8_t> serialized_data = data_msg.serializeMessage();

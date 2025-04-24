@@ -143,10 +143,10 @@ public:
     // A constant for the fixed header value
     static constexpr uint16_t _HEADER_ = 0xA5A5; ///< Fixed header value indicating the start of a message
 
-    uint16_t header;           ///< Header for identifying the message (usually fixed)
-    uint8_t group;             ///< Group ID for categorizing the message type
-    uint8_t msg;               ///< Message ID within the group
-    uint16_t length;           ///< Length of the data in the message (max 255)
+    uint16_t msg_header;           ///< Header for identifying the message (usually fixed)
+    uint8_t  msg_group;             ///< Group ID for categorizing the message type
+    uint8_t  msg_id;               ///< Message ID within the group
+    uint16_t msg_length;           ///< Length of the data in the message (max 255)
     std::vector<uint8_t> data; ///< Message data (content of the message)
 
     /**
@@ -158,7 +158,7 @@ public:
   
     DataMessage(const std::vector<uint8_t> &data_array);
 
-    DataMessage(uint8_t group, uint8_t msg, const std::vector<uint8_t>& data_array);  // Constructor declaration
+    DataMessage(uint8_t msg_group, uint8_t msg_id, const std::vector<uint8_t>& data_array);  // Constructor declaration
     /**
      * @brief Serializes the DataMessage object into a byte vector.
      *

@@ -21,13 +21,13 @@
 // Serialize the DataMessage into a binary format for transmission
 
 DataMessage::DataMessage()
-    : header(_HEADER_), group(0), msg(0), length(0)
+    : msg_header(_HEADER_), msg_group(0), msg_id(0), msg_length(0)
 {
     // Default constructor initializes the header with HEADER and all other fields to 0.
 }
 DataMessage::DataMessage(const std::vector<uint8_t> &data_array)
 {
-    size_t baseSize = sizeof(this->header) + sizeof(this->group) + sizeof(this->msg) + sizeof(this->length);
+    size_t baseSize = sizeof(this->msg_header) + sizeof(this->msg_group) + sizeof(this->msg_id) + sizeof(this->msg_length);
 
     // Ensure there is enough data for header, group, and msg
     if (data_array.size() < baseSize)
@@ -37,19 +37,19 @@ DataMessage::DataMessage(const std::vector<uint8_t> &data_array)
     }
 
     // Extract header (2 bytes)
-    header = _HEADER_;
+    msg_header = _HEADER_;
 
     // Extract group (1 byte)
-    group = data_array[0]; // group is the first byte (index 0)
+    msg_group = data_array[0]; // group is the first byte (index 0)
 
     // Extract msg (1 byte)
-    msg = data_array[1]; // msg is the second byte (index 1)
+    msg_id = data_array[1]; // msg is the second byte (index 1)
 
     // Extract the data portion (starting from index 2 onwards)
     this->data.assign(data_array.begin() + 2, data_array.end());
 
     // Update the length based on the size of the data portion
-    length = this->data.size();
+    msg_length = this->data.size();
 
     // Check if the data size is correct (the size of the data portion should match the remaining size in the array)
     // if (data_array.size() != baseSize + length)
@@ -59,7 +59,7 @@ DataMessage::DataMessage(const std::vector<uint8_t> &data_array)
     //}
 }
 
-DataMessage::DataMessage(uint8_t group, uint8_t msg, const std::vector<uint8_t> &data_array)
+DataMessage::DataMessage(uint8_t msg_group, uint8_t msg_id, const std::vector<uint8_t> &data_array)
 {
     ///size_t head_Size = sizeof(this->header) + sizeof(this->group) + sizeof(this->msg) + sizeof(this->length);
 
@@ -71,19 +71,19 @@ DataMessage::DataMessage(uint8_t group, uint8_t msg, const std::vector<uint8_t> 
     ///}
 
     // Extract header (2 bytes)
-    this->header = _HEADER_;
+    this->msg_header = _HEADER_;
 
     // Extract group (1 byte)
-    this->group = group; // group is the first byte (index 0)
+    this->msg_group = msg_group; // group is the first byte (index 0)
 
     // Extract msg (1 byte)
-    this->msg = msg; // msg is the second byte (index 1)
+    this->msg_id = msg_id; // msg is the second byte (index 1)
 
     // Extract the data portion (starting from index 2 onwards)
     this->data.assign(data_array.begin(), data_array.end());
 
     // Update the length based on the size of the data portion
-    this->length = this->data.size();
+    this->msg_length = this->data.size();
 }
 /**
  * @brief Serializes the DataMessage object into a byte vector.
@@ -97,18 +97,18 @@ std::vector<uint8_t> DataMessage::serializeMessage() const
     std::vector<uint8_t> serializedData;
 
     // Add header (2 bytes)
-    serializedData.push_back(static_cast<uint8_t>(header >> 8));   // High byte of header
-    serializedData.push_back(static_cast<uint8_t>(header & 0xFF)); // Low byte of header
+    serializedData.push_back(static_cast<uint8_t>(msg_header >> 8));   // High byte of header
+    serializedData.push_back(static_cast<uint8_t>(msg_header & 0xFF)); // Low byte of header
 
     // Add group (1 byte)
-    serializedData.push_back(group);
+    serializedData.push_back(msg_group);
 
     // Add msg (1 byte)
-    serializedData.push_back(msg);
+    serializedData.push_back(msg_id);
 
     // Add length (2 bytes)
-    serializedData.push_back(static_cast<uint8_t>(length >> 8));   // High byte
-    serializedData.push_back(static_cast<uint8_t>(length & 0xFF)); // Low byte
+    serializedData.push_back(static_cast<uint8_t>(msg_length >> 8));   // High byte
+    serializedData.push_back(static_cast<uint8_t>(msg_length & 0xFF)); // Low byte
 
     // Add data elements
     serializedData.insert(serializedData.end(), data.begin(), data.end());
@@ -128,42 +128,42 @@ std::vector<uint8_t> DataMessage::serializeMessage() const
  */
 DataMessage DataMessage::deserializeMessage(const std::vector<uint8_t> &buffer)
 {
-    DataMessage msg;
-    size_t baseSize = sizeof(msg.header) + sizeof(msg.group) + sizeof(msg.msg) + sizeof(msg.length);
+    DataMessage data_message;
+    size_t baseSize = sizeof(data_message.msg_header) + sizeof(data_message.msg_group) + sizeof(data_message.msg_id) + sizeof(data_message.msg_length);
 
     if (buffer.size() < baseSize)
     {
         // throw std::runtime_error("Insufficient data to deserialize.");
         //std::cerr << "DataMessage Error during deserialization" << std::endl;
-        return msg;
+        return data_message;
     }
 
     // Extract header (2 bytes)
-    msg.header = (static_cast<uint16_t>(buffer[0]) << 8) | buffer[1];
+    data_message.msg_header = (static_cast<uint16_t>(buffer[0]) << 8) | buffer[1];
 
     // Extract group (1 byte)
-    msg.group = buffer[2];
+    data_message.msg_group = buffer[2];
 
     // Extract msg (1 byte)
-    msg.msg = buffer[3];
+    data_message.msg_id = buffer[3];
 
     // Extract length (2 bytes)
-    msg.length = (static_cast<uint16_t>(buffer[4]) << 8) | buffer[5];
+    data_message.msg_length = (static_cast<uint16_t>(buffer[4]) << 8) | buffer[5];
 
     // Check if remaining buffer matches length
-    // if (buffer.size() < (baseSize + msg.length))
+    // if (buffer.size() < (baseSize + data_message.length))
     //{
     // throw std::runtime_error("Invalid data size, cannot deserialize.");
     //    std::cerr << "DataMessage Invalid data size, cannot deserialize." << std::endl;
     //}
 
     // Only extract data if buffer is large enough
-    if (buffer.size() >= baseSize + msg.length)
+    if (buffer.size() >= baseSize + data_message.msg_length)
     {
-        msg.data.assign(buffer.begin() + baseSize, buffer.begin() + baseSize + msg.length);
+        data_message.data.assign(buffer.begin() + baseSize, buffer.begin() + baseSize + data_message.msg_length);
     }
 
-    return msg;
+    return data_message;
 }
 
 /**
@@ -176,7 +176,7 @@ DataMessage DataMessage::deserializeMessage(const std::vector<uint8_t> &buffer)
 bool DataMessage::isValid() const
 {
     // size_t baseSize = sizeof(msg.header) + sizeof(msg.group) + sizeof(msg.msg) + sizeof(msg.length);
-    return (header == _HEADER_ && length == data.size() && group >= 0 && msg >= 0);
+    return (msg_header == _HEADER_ && msg_length == data.size() && msg_group >= 0 && msg_id >= 0);
 }
 
 /**
@@ -189,10 +189,10 @@ bool DataMessage::isValid() const
 void DataMessage::printMessage(const std::string &tag) const
 {
     std::cout << tag << ": Header 0x" << std::hex << std::setw(2) << std::setfill('0')
-              << header
-              << ", Group: 0x" << static_cast<int>(group)
-              << ", Msg: 0x" << static_cast<int>(msg)
-              << ", Length: " << std::dec << static_cast<int>(length)
+              << msg_header
+              << ", Group: 0x" << static_cast<int>(msg_group)
+              << ", Msg: 0x" << static_cast<int>(msg_id)
+              << ", Length: " << std::dec << static_cast<int>(msg_length)
               << ", Data: ";
 
     for (auto byte : data)
@@ -212,13 +212,13 @@ void DataMessage::printMessage(const std::string &tag) const
  */
 size_t DataMessage::get_total_length() const
 {
-    return sizeof(header) + sizeof(group) + sizeof(msg) + sizeof(length) + data.size();
+    return sizeof(msg_header) + sizeof(msg_group) + sizeof(msg_id) + sizeof(msg_length) + data.size();
     // return sizeof(header) + sizeof(group) + sizeof(msg) + sizeof(length) + data.length();
 }
 
 size_t DataMessage::get_base_length() const
 {
-    return sizeof(header) + sizeof(group) + sizeof(msg) + sizeof(length);
+    return sizeof(msg_header) + sizeof(msg_group) + sizeof(msg_id) + sizeof(msg_length);
 }
 
 /**

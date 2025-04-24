@@ -42,9 +42,9 @@ void setup_signal_handlers()
 DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &original_args)
 {
     DataMessage data_msg;
-    data_msg.group = 0; // Default group, can be modified or specified from parameters
-    data_msg.msg = 0;
-    data_msg.length = 0;
+    data_msg.msg_group = 0; // Default group, can be modified or specified from parameters
+    data_msg.msg_id = 0;
+    data_msg.msg_length = 0;
     // Save the original argument strings
     for (int i = 0; i < argc; ++i)
     {
@@ -60,18 +60,18 @@ DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &or
 
     // Find the operation code (group)
     auto key_iter = operations.find(argv[1]);
-    data_msg.group = (key_iter != operations.end()) ? key_iter->second : 0;
+    data_msg.msg_group = (key_iter != operations.end()) ? key_iter->second : 0;
 
     // Ensure the second argument is a valid message ID (argv[2])
     try
     {
         // Parse the message ID from argv[2]
-        data_msg.msg = static_cast<uint8_t>(std::stoul(argv[2])); // Expecting message ID in the range of uint8_t (0-255)
+        data_msg.msg_id = static_cast<uint8_t>(std::stoul(argv[2])); // Expecting message ID in the range of uint8_t (0-255)
     }
     catch (const std::exception &e)
     {
         std::cerr << "Client: Error. Invalid message ID '" << argv[2] << "'. Using 0 instead.\n";
-        data_msg.msg = 0; // Default to 0 if invalid
+        data_msg.msg_id = 0; // Default to 0 if invalid
     }
 
     // Parse the remaining arguments as uint8_t and add them to data
@@ -94,7 +94,7 @@ DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &or
             data_msg.data.push_back(0); // Add 0 if conversion fails
         }
     }
-    data_msg.length = static_cast<uint8_t>(data_msg.data.size());
+    data_msg.msg_length = static_cast<uint8_t>(data_msg.data.size());
     return data_msg;
 }
 

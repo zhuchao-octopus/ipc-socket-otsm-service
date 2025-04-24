@@ -201,10 +201,10 @@ void ipc_app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &
     }
 
     DataMessage query_msg;
-    query_msg.group = group;
-    query_msg.msg = msg;
+    query_msg.msg_group = group;
+    query_msg.msg_id = msg;
     query_msg.data = query_array;
-    query_msg.length = query_msg.data.size();
+    query_msg.msg_length = query_msg.data.size();
 
     query_msg.printMessage("Send query");
     std::vector<uint8_t> serialized_data = query_msg.serializeMessage();
@@ -221,8 +221,8 @@ void ipc_app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t>
     }
 
     DataMessage query_msg;
-    query_msg.group = group;
-    query_msg.msg = msg;
+    query_msg.msg_group = group;
+    query_msg.msg_id = msg;
     query_msg.data = parameters;
 
     std::vector<uint8_t> serialized_data = query_msg.serializeMessage();
@@ -407,8 +407,8 @@ void ipc_reconnect_to_server()
 DataMessage ipc_check_complete_data_packet(std::vector<uint8_t> &buffer, DataMessage &query_msg)
 {
     // Reset to invalid state (used for isValid() check later)
-    query_msg.group = -1;
-    query_msg.msg = -1;
+    query_msg.msg_group = -1;
+    query_msg.msg_id = -1;
 
     const size_t baseLength = query_msg.get_base_length(); // Expected minimum size (header + group + msg + length)
 
@@ -813,7 +813,7 @@ void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
  * expose the full DataMessage class externally.
  *
  * @param group         Group ID of the message.
- * @param msg_id           Message ID within the group.
+ * @param msg_id        Message ID within the group.
  * @param delay         Delay in milliseconds before the message is dispatched.
  * @param message_data  The payload of the message as a byte vector.
  */
