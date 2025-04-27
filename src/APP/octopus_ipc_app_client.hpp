@@ -51,7 +51,7 @@ extern "C"
      * @brief Initializes the client connection and starts the response receiver thread.
      * This function is automatically called when the shared library is loaded.
      */
-    void ipc_app_main();
+    void ipc_client_main();
 
     /**
      * @brief Cleans up the client connection and stops the response receiver thread.

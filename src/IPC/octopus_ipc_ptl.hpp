@@ -52,79 +52,40 @@ enum MessageGroup
 };
 
 // Individual message definitions
-enum Message_Cmd_Id
+enum Message_Group_0_Cmd_Id //0
 {
-    MSG_GET_HELP_INFO = 0,
+    MSG_IPC_SOCKET_HELP_INFO = 0,
+};
+
+enum Message_Group_1_Cmd_Id //50
+{
     MSG_IPC_SOCKET_CONFIG_FLAG = 50,
     MSG_IPC_SOCKET_CONFIG_PUSH_DELAY,
     MSG_IPC_SOCKET_CONFIG_IP,
-
-    MSG_GET_INDICATOR_INFO = 100,
-    MSG_GET_METER_INFO = 101,
-    MSG_GET_DRIVINFO_INFO = 102
 };
 
-// Function to get a human-readable string for a message group
-inline const char *getMessageGroupName(MessageGroup group)
+/**
+ * @brief  Message Group 11 - Car Information Commands
+ * @note   Command ID base: 100
+ */
+typedef enum
 {
-    switch (group)
-    {
-    case MSG_GROUP_0:
-        return "Message Group 0";
-    case MSG_GROUP_1:
-        return "Message Group 1";
-    case MSG_GROUP_2:
-        return "Message Group 2";
-    case MSG_GROUP_3:
-        return "Message Group 3";
-    case MSG_GROUP_4:
-        return "Message Group 4";
-    case MSG_GROUP_5:
-        return "Message Group 5";
-    case MSG_GROUP_6:
-        return "Message Group 6";
-    case MSG_GROUP_7:
-        return "Message Group 7";
-    case MSG_GROUP_8:
-        return "Message Group 8";
-    case MSG_GROUP_9:
-        return "Message Group 9";
-    case MSG_GROUP_10:
-        return "Message Group 10";
-    case MSG_GROUP_11:
-        return "Message Group 11";
-    case MSG_GROUP_12:
-        return "Message Group 12";
-    case MSG_GROUP_13:
-        return "Message Group 13";
-    case MSG_GROUP_14:
-        return "Message Group 14";
-    case MSG_GROUP_15:
-        return "Message Group 15";
-    default:
-        return "Unknown Message Group";
-    }
-}
+    MSG_CAR_GET_INDICATOR_INFO = 100,   // Request indicator (lights, signals) status
+    MSG_CAR_GET_METER_INFO,              // Request meter readings (odometer, speed, voltage)
+    MSG_CAR_GET_DRIVINFO_INFO,           // Request driving information (gear, SOC, etc.)
 
-// Function to get a human-readable string for a message
-inline const char *getMessageName(Message_Cmd_Id msg)
-{
-    switch (msg)
-    {
-    case MSG_GET_HELP_INFO:
-        return "Get Help Info";
-    case MSG_IPC_SOCKET_CONFIG_FLAG:
-        return "IPC Socket Config Flag";
-    case MSG_GET_INDICATOR_INFO:
-        return "Get Indicator Info";
-    case MSG_GET_METER_INFO:
-        return "Get Meter Info";
-    case MSG_GET_DRIVINFO_INFO:
-        return "Get Driver Info";
-    default:
-        return "Unknown Message";
-    }
-}
+    MSG_CAR_METER_ODO_CLEAR,             // Clear total odometer (reset total distance)
+    MSG_CAR_METER_TIME_CLEAR,            // Clear accumulated ride time
+    MSG_CAR_METER_TRIP_DISTANCE_CLEAR,   // Clear trip distance counter (trip meter)
+
+    MSG_CAR_SET_LOW_BEAM,                // Control low beam headlights (turn ON/OFF)
+    MSG_CAR_SET_HIGH_BEAM,               // Control high beam headlights (turn ON/OFF)
+
+} Message_Group_11_Cmd_Id;
+
+
+/// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define MERGE_BYTES(byte1, byte2) ((static_cast<unsigned int>(byte1) << 8) | (static_cast<unsigned int>(byte2)))
 
@@ -132,9 +93,11 @@ inline const char *getMessageName(Message_Cmd_Id msg)
     byte1 = static_cast<unsigned char>((value >> 8) & 0xFF); \
     byte2 = static_cast<unsigned char>(value & 0xFF);
 
-#define MSG_GROUP_HELP MSG_GROUP_0
-#define MSG_GROUP_SET MSG_GROUP_1
-#define MSG_GROUP_CAR MSG_GROUP_11
+#define MSG_GROUP_HELP         MSG_GROUP_0
+#define MSG_GROUP_SET          MSG_GROUP_1
+#define MSG_GROUP_SETTING      MSG_GROUP_SET
+#define MSG_GROUP_CAR          MSG_GROUP_11
+
 /// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 class DataMessage
@@ -146,8 +109,8 @@ public:
     uint16_t msg_header;           ///< Header for identifying the message (usually fixed)
     uint8_t  msg_group;             ///< Group ID for categorizing the message type
     uint8_t  msg_id;               ///< Message ID within the group
-    uint16_t msg_length;           ///< Length of the data in the message (max 255)
-    std::vector<uint8_t> data; ///< Message data (content of the message)
+    uint16_t msg_length;           ///< Length of the data in the message (max 255) msg_length = data.size();
+    std::vector<uint8_t> data;     ///< Message data (content of the message)
 
     /**
      * @brief Default constructor for the DataMessage object.

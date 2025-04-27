@@ -15,13 +15,13 @@
 #include <arpa/inet.h>
 #include "octopus_ipc_ptl.hpp"
 
+//#define CHECKSUM_CRC_256
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //[Header:2字节][Group:1字节][Msg:1字节][Length:2字节][Data:Length字节]
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Serialize the DataMessage into a binary format for transmission
 
-DataMessage::DataMessage()
-    : msg_header(_HEADER_), msg_group(0), msg_id(0), msg_length(0)
+DataMessage::DataMessage() : msg_header(_HEADER_), msg_group(0), msg_id(0), msg_length(0)
 {
     // Default constructor initializes the header with HEADER and all other fields to 0.
 }
@@ -113,6 +113,15 @@ std::vector<uint8_t> DataMessage::serializeMessage() const
     // Add data elements
     serializedData.insert(serializedData.end(), data.begin(), data.end());
 
+#ifdef CHECKSUM_CRC_256
+    // Calculate checksum only for the data section
+    uint8_t checksum = 0;
+    for (size_t i = 0; i < serializedData.size(); ++i) {
+        checksum += serializedData[i];
+    }
+    // Append checksum
+    serializedData.push_back(checksum & 0xFF);
+#endif
     return serializedData;
 }
 

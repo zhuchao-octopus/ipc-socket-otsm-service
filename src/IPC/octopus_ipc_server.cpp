@@ -32,16 +32,23 @@
 #include <unordered_set>
 #include <algorithm>
 #include <dlfcn.h>
-#include "octopus_ipc_socket.hpp"
+
 #include "octopus_logger.hpp"
+#include "octopus_ipc_socket.hpp"
+#include "octopus_ipc_ptl.hpp"
 #include "../OTSM/octopus_carinfor.h"
-#include "../OTSM/octopus_ipc_socket.h"
+//#include "../OTSM/octopus_ipc.h"
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
+typedef void (*CarInforCallback_t)(int cmd);
+
 typedef int (*TaskManagerStateDoCommandFunc)(uint8_t *, uint8_t);
 
 typedef void (*TaskManagerStateRegistCallbackFunc)(CarInforCallback_t callback);
 typedef void (*TaskManagerStateStopRunningFunc)();
+
 typedef void (*TaskManagerState_set_message_push_delay)(uint16_t delay_ms);
+typedef void (*TaskManagerState_ipc_doCommand)(uint8_t *data, uint8_t length);
 
 typedef carinfo_meter_t *(*T_otsm_get_meter_info)();
 typedef carinfo_indicator_t *(*T_otsm_get_indicator_info)();
@@ -51,6 +58,7 @@ TaskManagerStateStopRunningFunc otsm_taskManagerStateStopRunning = NULL;
 TaskManagerStateDoCommandFunc otsm_taskManagerStateDoCommand = NULL;
 TaskManagerStateRegistCallbackFunc otsm_taskManagerStateRegistCallbackFunc = NULL;
 TaskManagerState_set_message_push_delay ostsm_set_message_push_delay = NULL;
+TaskManagerState_ipc_doCommand ostsm_ipc_doCommand = NULL;
 
 T_otsm_get_meter_info otsm_get_meter_info = NULL;
 T_otsm_get_indicator_info otsm_get_indicator_info = NULL;
@@ -290,7 +298,7 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    ostsm_set_message_push_delay = (TaskManagerState_set_message_push_delay)dlsym(handle, "set_message_push_delay");
+    ostsm_set_message_push_delay = (TaskManagerState_set_message_push_delay)dlsym(handle, "update_push_interval_ms");
     if (!ostsm_set_message_push_delay)
     {
         std::cerr << "Server Failed to find ostsm_set_message_push_delay: " << dlerror() << std::endl;
@@ -298,6 +306,14 @@ void ipc_server_initialize_otsm()
         return;
     }
 
+    ostsm_ipc_doCommand = (TaskManagerState_ipc_doCommand)dlsym(handle, "otsm_do_ipc_Command");
+    if (!ostsm_ipc_doCommand)
+    {
+        std::cerr << "Server Failed to find ostsm_ipc_doCommand: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+     
     otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
     if (!otsm_get_meter_info)
     {
@@ -490,7 +506,8 @@ void ipc_server_handle_client(int client_fd)
             handle_result = ipc_server_handle_help(client_fd, query_msg); // Help/info request
             break;
 
-        case MSG_GROUP_SET:
+        //case MSG_GROUP_SET:
+        case MSG_GROUP_SETTING:
             handle_result = ipc_server_handle_config(client_fd, query_msg); // Configuration command
             break;
 
@@ -705,19 +722,19 @@ void ipc_server_notify_carInfor_to_client(int client_fd, int cmd)
 {
     switch (cmd)
     {
-    case CMD_GET_INDICATOR_INFO:
+    case MSG_CAR_GET_INDICATOR_INFO:
     {
         carinfo_indicator_t *carinfo_indicator = otsm_get_indicator_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_indicator, sizeof(carinfo_indicator_t), "handle_car_infor (Indicator)");
         break;
     }
-    case CMD_GET_METER_INFO:
+    case MSG_CAR_GET_METER_INFO:
     {
         carinfo_meter_t *carinfo_meter = otsm_get_meter_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
         break;
     }
-    case CMD_GET_DRIVINFO_INFO:
+    case MSG_CAR_GET_DRIVINFO_INFO:
     {
         carinfo_drivinfo_t *carinfo_drivinfo = otsm_get_drivinfo_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_drivinfo, sizeof(carinfo_drivinfo_t), "handle_car_infor (Driver)");

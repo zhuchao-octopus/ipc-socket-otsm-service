@@ -107,10 +107,12 @@ bool ipc_is_socket_server_process_running(const std::string &process_name)
         std::string line_str(one_line_array);
 
         // Check if the line contains the target process name and is not a grep command
-        if (line_str.find(process_name) != std::string::npos && line_str.find("grep") == std::string::npos)
+        //if (line_str.find(process_name) != std::string::npos && line_str.find("grep") == std::string::npos)
+        size_t found_index = line_str.find(process_name);
+        if (found_index != std::string::npos)
         {
             // Found the process and it's not from a grep command
-            std::cout << "Client: Found:"<< line_str << std::endl;
+            std::cout << "Client: Found:["<< process_name << "] ["<< found_index << "] "<< line_str << std::endl;
             fclose(fp);
             return true;
         }
@@ -196,7 +198,7 @@ void ipc_app_send_query(uint8_t group, uint8_t msg, const std::vector<uint8_t> &
 {
     if (socket_client.load() < 0)
     {
-        std::cerr << "App: Cannot send query, no active connection.\n";
+        std::cerr << "Client: Cannot send query, no active connection.\n";
         return;
     }
 
@@ -216,7 +218,7 @@ void ipc_app_send_command(uint8_t group, uint8_t msg, const std::vector<uint8_t>
 {
     if (socket_client.load() < 0)
     {
-        std::cerr << "App: Cannot send command, no active connection.\n";
+        std::cerr << "Client: Cannot send command, no active connection.\n";
         return;
     }
 
@@ -238,7 +240,7 @@ void ipc_register_socket_callback(std::string func_name, OctopusAppResponseCallb
     {
         std::lock_guard<std::mutex> lock(callback_mutex);
         g_named_callbacks.push_back({func_name, callback});
-        LOG_CC("App: Registered callback: " + func_name);
+        LOG_CC("Client: Registered callback: " + func_name);
     }
 }
 
@@ -547,7 +549,7 @@ void ipc_signal_handler(int signum)
 /**
  * @brief Initializes the application, sets up the socket connection, and starts the response thread.
  */
-__attribute__((constructor)) void ipc_app_main()
+__attribute__((constructor)) void ipc_client_main()
 {
     // Register signal handler for SIGINT to safely shutdown the application when interrupt signal is received
     signal(SIGINT, ipc_signal_handler);
@@ -629,12 +631,12 @@ __attribute__((constructor)) void ipc_app_main()
  */
 __attribute__((destructor)) void ipc_exit_cleanup()
 {
-    std::cout << "App: Cleaning up resources...\n";
+    std::cout << "Client: Cleaning up resources...\n";
 
     // Ensure cleanup is only performed once using atomic flag
     if (!std::atomic_exchange(&socket_running, false))
     {
-        std::cout << "App: Cleanup already performed, skipping...\n";
+        std::cout << "Client: Cleanup already performed, skipping...\n";
         // return;
     }
 #ifdef OCTOPUS_MESSAGE_BUS
@@ -659,11 +661,11 @@ __attribute__((destructor)) void ipc_exit_cleanup()
     try
     {
         client.close_socket(socket_client.load());
-        std::cout << "App: Socket closed.\n";
+        std::cout << "Client: Socket closed.\n";
     }
     catch (const std::exception &e)
     {
-        std::cerr << "App: Error closing socket: " << e.what() << std::endl;
+        std::cerr << "Client: Error closing socket: " << e.what() << std::endl;
     }
 
     // Ensure receiver thread is properly joined if it is joinable
@@ -672,18 +674,18 @@ __attribute__((destructor)) void ipc_exit_cleanup()
         try
         {
             ipc_receiver_thread.join();
-            std::cout << "App: Receiver thread joined successfully.\n";
+            std::cout << "Client: Receiver thread joined successfully.\n";
         }
         catch (const std::exception &e)
         {
-            std::cerr << "App: Error joining receiver thread: " << e.what() << std::endl;
+            std::cerr << "Client: Error joining receiver thread: " << e.what() << std::endl;
         }
     }
     else
     {
-        std::cout << "App: No receiver thread to join.\n";
+        std::cout << "Client: No receiver thread to join.\n";
     }
-    std::cout << "App: Cleanup complete.\n";
+    std::cout << "Client: Cleanup complete.\n";
 }
 
 void ipc_redirect_log_to_file()
@@ -700,7 +702,7 @@ void ipc_redirect_log_to_file()
     }
     else
     {
-        std::cout << "Log file redirected to: " << log_file_path << std::endl;
+        std::cout << "Client: Log file redirected to: " << log_file_path << std::endl;
     }
     //  freopen("/tmp/octopus_ipc_client.log", "w", stderr);
 #else
@@ -719,7 +721,7 @@ void ipc_send_message(DataMessage &message)
 {
     if (socket_client.load() < 0)
     {
-        std::cerr << "App: Cannot send command, no active connection.\n";
+        std::cerr << "Client: Cannot send command, no active connection.\n";
         return;
     }
     std::vector<uint8_t> serialized_data = message.serializeMessage();
@@ -747,19 +749,19 @@ void ipc_send_message_queue_(DataMessage &message)
 
     // Submit the send task to the thread pool asynchronously
     g_threadPool.enqueue([copied_msg]() mutable
-                         {
-        // Check if the socket is still valid before sending
-        if (socket_client.load() < 0)
-        {
-            std::cerr << "App: Cannot send command, no active connection (queued).\n";
-            return;  // Exit early if there's no active socket connection
-        }
+                    {
+    // Check if the socket is still valid before sending
+    if (socket_client.load() < 0)
+    {
+        std::cerr << "Client: Cannot send command, no active connection (queued).\n";
+        return;  // Exit early if there's no active socket connection
+    }
 
-        // Serialize the message into a byte vector for transmission
-        std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
+    // Serialize the message into a byte vector for transmission
+    std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
 
-        // Send the serialized data over the active socket
-        client.send_query(socket_client.load(), serialized_data); });
+    // Send the serialized data over the active socket
+    client.send_query(socket_client.load(), serialized_data); });
 }
 
 void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
