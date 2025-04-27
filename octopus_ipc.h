@@ -77,11 +77,11 @@ extern "C"
 
     void app_ipc_socket_stop_running(void);
 
-    int ipc_socket_doCommand(uint8_t *data, uint8_t length);
-
     void register_car_infor_callback(CarInforCallback_t callback);
 
-    void set_message_push_delay(uint16_t delay_ms);
+    void update_push_interval_ms(uint16_t delay_ms);
+
+    int otsm_do_ipc_Command(uint8_t *data, uint8_t length);
 
 #ifdef __cplusplus
 }

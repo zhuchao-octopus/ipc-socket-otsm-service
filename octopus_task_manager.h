@@ -32,7 +32,7 @@
 #include "octopus_update_soc.h" // SOC update functions.
 #include "octopus_update_mcu.h" // MCU update functions.
 
-#include "octopus_ipc_socket.h"
+#include "octopus_ipc.h"
 
 #ifdef __cplusplus
 extern "C"

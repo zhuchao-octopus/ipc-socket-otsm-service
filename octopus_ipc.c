@@ -25,7 +25,7 @@
 #include "octopus_tickcounter.h"
 #include "octopus_msgqueue.h"
 
-#include "octopus_ipc_socket.h"
+#include "octopus_ipc.h"
 /*******************************************************************************
  * Debug Switch Macros
  * Define debug levels or other switches as required.
@@ -43,7 +43,7 @@
  ******************************************************************************/
 static bool ipc_socket_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
 static bool ipc_socket_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
-void notify_message_to_ipc_socket(int cmd_parameter);
+static void ipc_notify_message_to_all(int cmd_parameter);
 /*******************************************************************************
  * Global Variables
  * Define variables accessible across multiple files if needed.
@@ -58,7 +58,7 @@ static CarInforCallback_t CarInforCallback = NULL;
 static uint8_t l_u8_idle_swich = 0;
 static uint32_t l_t_msg_wait_10_timer; // Timer for 10 ms message waiting period
 static uint32_t l_t_msg_wait_500_timer;
-static uint16_t l_t_callback_delay = 1000;
+static uint16_t l_t_callback_delay = 0;//1000;
 /*******************************************************************************
  * Global Function Implementations
  ******************************************************************************/
@@ -86,7 +86,7 @@ void app_ipc_socket_init_running(void)
  */
 void app_ipc_socket_start_running(void)
 {
-    LOG_LEVEL("ipc_socket_start_running\r\n");
+    LOG_LEVEL("app_ipc_socket_start_running\r\n");
     OTMS(TASK_ID_IPC_SOCKET, OTMS_S_ASSERT_RUN);
 }
 
@@ -119,35 +119,33 @@ void app_ipc_socket_running(void)
    
     if (msg->id == NO_MSG)
     {
-        // if (GetTickCounter(&l_t_msg_wait_500_timer) >= 50)
-        // if (GetTickCounter(&l_t_msg_wait_500_timer) >= 1000*30)
         if ((GetTickCounter(&l_t_msg_wait_500_timer) >= l_t_callback_delay) && (l_t_callback_delay > 0))
         {
             if (l_u8_idle_swich > 0)
             {
-                notify_message_to_ipc_socket(CMD_GET_INDICATOR_INFO);
+                ipc_notify_message_to_all(CMD_GET_INDICATOR_INFO);
                 l_u8_idle_swich = 0;
             }
             else
             {
-                notify_message_to_ipc_socket(CMD_GET_METER_INFO);
+                ipc_notify_message_to_all(CMD_GET_METER_INFO);
                 l_u8_idle_swich = 1;
             }
-            // notify_message_to_ipc_socket(CMD_GET_METER_INFO);
-            // notify_message_to_ipc_socket(CMD_GET_DRIVINFO_INFO);
+
             StartTickCounter(&l_t_msg_wait_500_timer);
         }
         return;
     }
- 
+   
     switch (msg->id)
     {
     case MSG_DEVICE_CAR_INFOR_EVENT:
     case MSG_DEVICE_CAN_EVENT:
         LOG_LEVEL("msg->id=%d param1=%d,param2=%d\r\n", msg->id, msg->param1,msg->param2);
-        notify_message_to_ipc_socket(msg->param1);
+        ipc_notify_message_to_all(msg->param1);
         break;
     }
+    StartTickCounter(&l_t_msg_wait_500_timer);
 }
 
 void app_ipc_socket_post_running(void)
@@ -159,7 +157,7 @@ void app_ipc_socket_stop_running(void)
     OTMS(TASK_ID_IPC_SOCKET, OTMS_S_INVALID);
 }
 
-void notify_message_to_ipc_socket(int cmd_parameter)
+void ipc_notify_message_to_all(int cmd_parameter)
 {
     if (CarInforCallback)
     {
@@ -168,7 +166,7 @@ void notify_message_to_ipc_socket(int cmd_parameter)
     }
 }
 
-void set_message_push_delay(uint16_t delay_ms)
+void update_push_interval_ms(uint16_t delay_ms)
 {
     l_t_callback_delay = delay_ms;
 }
@@ -235,9 +233,9 @@ bool ipc_socket_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *a
 }
 
 //__attribute__((visibility("default")))
-int ipc_socket_doCommand(uint8_t *data, uint8_t length)
+int otsm_do_ipc_Command(uint8_t *data, uint8_t length)
 {
-    LOG_LEVEL("ipc_socket_doCommand called with length: %d\n", length);
+    LOG_LEVEL("ipc_doCommand called with length: %d\n", length);
     for (int i = 0; i < length; i++)
     {
         LOG_LEVEL("data[%d] = %d\n", i, data[i]);

@@ -112,15 +112,30 @@ extern "C"
 #pragma pack(push, 1)
     typedef struct
     {
-        uint16_t current;               // Current (0.1A)
-        uint16_t voltage;               // Voltage (0.1V)
-        uint8_t soc;                    // State of charge (0-100%) and corresponding voltage levels
-        uint16_t speed;                 // Speed (0.1 km/h)
-        uint16_t speed_real;            // Actual speed (0.1 km/h)
-        uint16_t rpm;                   // RPM (offset: -20000)
-        uint8_t voltageSystem;          // Voltage system: 0x01:36V  0x02:48V  0x04:60V  0x08:64V  0x10:72V  0x20:80V  0x40:84V  0x80:96V
-        uint8_t gear;                   // Gear information
-        uint32_t odo;                   // Odometer (0.1 km)
+        uint32_t odometer;                  // Total distance traveled (unit: 0.1 km)
+
+        uint16_t current;                   // Battery current (unit: 0.1 A)
+        uint16_t voltage;                   // Battery voltage (unit: 0.1 V)
+
+        uint16_t speed;                     // Displayed speed (unit: 0.1 km/h)
+        uint16_t actual_speed;              // Actual wheel speed (unit: 0.1 km/h)
+
+        uint16_t rpm;                       // Motor RPM (raw value, offset by -20000)
+
+        uint8_t voltage_system;             // Battery system voltage type:
+                                            // 0x01:36V, 0x02:48V, 0x04:60V, 0x08:64V,
+                                            // 0x10:72V, 0x20:80V, 0x40:84V, 0x80:96V
+
+        uint8_t gear;                       // Current gear level (0–N)
+
+        uint8_t soc;                        // State of Charge: 0–100% (based on voltage curve)
+
+        uint8_t unit_type;                  // Unit system: 0 = Metric (km/km/h), 1 = Imperial (mi/mph)
+
+        uint32_t ride_time;                 // Total ride time (unit: seconds)
+
+        uint32_t trip_distance;             // Trip meter (unit: 0.1 km)
+
     } carinfo_meter_t;
 
 #pragma pack(push, 1)

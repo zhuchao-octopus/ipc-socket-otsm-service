@@ -95,11 +95,12 @@ static void log_sif_data(uint8_t *data, uint8_t maxlen); // Log SIF data for deb
  */
 #ifdef TASK_MANAGER_STATE_MACHINE_SIF
 static uint8_t sif_buff[12] = {0}; // Buffer for storing SIF data
+static carinfo_sif_t lt_sif = {0}; // Local SIF data structure
 #endif
-static carinfo_sif_t lt_sif = {0};             // Local SIF data structure
+
 static carinfo_meter_t lt_meter = {0};         // Local meter data structure
 static carinfo_indicator_t lt_indicator = {0}; // Local indicator data structure
-static carinfo_drivinfo_t lt_drivinfo = {0};   // Local drivetrain information
+// static carinfo_drivinfo_t lt_drivinfo = {0};   // Local drivetrain information
 
 // Timer variables
 static uint32_t l_t_msg_wait_meter_timer; // Timer for 10 ms message wait (not used currently)
@@ -197,27 +198,22 @@ void app_carinfo_on_exit_post_run(void)
 
 uint16_t app_carinfo_getSpeed(void)
 {
-    return lt_meter.speed_real;
+    return lt_meter.actual_speed;
 }
 
 carinfo_indicator_t *app_carinfo_get_indicator_info(void)
 {
-    // lt_indicator.leftTurn = 0x03;
-    // lt_indicator.wifi = 0x0f;
     return &lt_indicator;
 }
 
 carinfo_meter_t *app_carinfo_get_meter_info(void)
 {
-    // lt_meter.soc=1;
-    // lt_meter.speed_real=30;
     return &lt_meter;
 }
 
 carinfo_drivinfo_t *app_carinfo_get_drivinfo_info(void)
 {
-    // lt_drivinfo.gear = (carinfo_drivinfo_gear_t)8;
-    return &lt_drivinfo;
+    return NULL; //&lt_drivinfo;
 }
 
 /*******************************************************************************
@@ -238,10 +234,10 @@ bool meter_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uin
         {
         case CMD_MODMETER_RPM_SPEED:
             // Fill speed and RPM values into payload
-            tmp[0] = MSB_WORD(lt_meter.speed_real); // High byte of real speed
-            tmp[1] = LSB_WORD(lt_meter.speed_real); // Low byte of real speed
-            tmp[2] = MSB_WORD(lt_meter.rpm);        // High byte of RPM
-            tmp[3] = LSB_WORD(lt_meter.rpm);        // Low byte of RPM
+            tmp[0] = MSB_WORD(lt_meter.actual_speed); // High byte of real speed
+            tmp[1] = LSB_WORD(lt_meter.actual_speed); // Low byte of real speed
+            tmp[2] = MSB_WORD(lt_meter.rpm);          // High byte of RPM
+            tmp[3] = LSB_WORD(lt_meter.rpm);          // Low byte of RPM
 
             // Build protocol frame with data
             ptl_build_frame(M2A_MOD_METER, CMD_MODMETER_RPM_SPEED, tmp, 4, buff);
@@ -254,7 +250,7 @@ bool meter_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uin
             tmp[2] = LSB_WORD(lt_meter.voltage); // Low byte of voltage
             tmp[3] = MSB_WORD(lt_meter.current); // High byte of current
             tmp[4] = LSB_WORD(lt_meter.current); // Low byte of current
-            tmp[5] = lt_meter.voltageSystem;     // System voltage
+            tmp[5] = lt_meter.voltage_system;    // System voltage
             tmp[6] = 0;                          // Reserved or unused byte
 
             // Construct and send protocol frame
@@ -315,11 +311,11 @@ bool meter_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t 
         {
         case CMD_MODMETER_RPM_SPEED:
             // Extract real speed and RPM from received data
-            lt_meter.speed_real = MK_WORD(payload->data[0], payload->data[1]);
+            lt_meter.actual_speed = MK_WORD(payload->data[0], payload->data[1]);
             lt_meter.rpm = MK_WORD(payload->data[2], payload->data[3]);
 
             // Optionally calculate displayed speed (e.g., with a scaling factor)
-            lt_meter.speed = lt_meter.speed_real * 11 / 10;
+            lt_meter.speed = lt_meter.actual_speed * 11 / 10;
 
 #ifndef CARINFOR_PTL_NO_ACK
             // Respond with ACK
@@ -335,7 +331,7 @@ bool meter_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t 
             lt_meter.soc = payload->data[0];
             lt_meter.voltage = MK_WORD(payload->data[1], payload->data[2]);
             lt_meter.current = MK_WORD(payload->data[3], payload->data[4]);
-            lt_meter.voltageSystem = payload->data[5];
+            lt_meter.voltage_system = payload->data[5];
 
 #ifndef CARINFOR_PTL_NO_ACK
             // Respond with ACK
@@ -481,8 +477,8 @@ bool indicator_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buf
             tmp = 0x01;
             ptl_build_frame(A2M_MOD_INDICATOR, CMD_MODINDICATOR_INDICATOR, &tmp, 1, ackbuff);
 #endif
-            //LOG_LEVEL("frame_type=%02x cmd=%02x,length=%d data[]=", payload->frame_type, payload->cmd, payload->data_len);
-            //LOG_BUFF(payload->data, payload->data_len);
+            // LOG_LEVEL("frame_type=%02x cmd=%02x,length=%d data[]=", payload->frame_type, payload->cmd, payload->data_len);
+            // LOG_BUFF(payload->data, payload->data_len);
             send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_INDICATOR_INFO, 0);
             return true;
 
@@ -511,8 +507,8 @@ bool drivinfo_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, 
         switch (param1)
         {
         case CMD_MODDRIVINFO_GEAR:
-            tmp[0] = lt_drivinfo.gear;
-            tmp[1] = lt_drivinfo.driveMode;
+            // tmp[0] = lt_drivinfo.gear;
+            // tmp[1] = lt_drivinfo.driveMode;
             ptl_build_frame(M2A_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, tmp, 2, buff);
             return true;
         default:
@@ -554,8 +550,8 @@ bool drivinfo_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff
         {
         case CMD_MODDRIVINFO_GEAR:
             // LOGIC
-            lt_drivinfo.gear = (carinfo_drivinfo_gear_t)payload->data[0];
-            lt_drivinfo.driveMode = (carinfo_drivinfo_drivemode_t)payload->data[1];
+            // lt_drivinfo.gear = (carinfo_drivinfo_gear_t)payload->data[0];
+            // lt_drivinfo.driveMode = (carinfo_drivinfo_drivemode_t)payload->data[1];
             // ACK
 #ifndef CARINFOR_PTL_NO_ACK // no ack
             uint8_t tmp = 0;
@@ -646,7 +642,7 @@ void app_car_controller_sif_updating(void)
 
 void app_car_controller_msg_handler(void)
 {
-
+#ifdef TASK_MANAGER_STATE_MACHINE_SIF
     lt_indicator.position = GPIO_PIN_READ_SKD() ? 0 : 1;
     lt_indicator.highBeam = GPIO_PIN_READ_DDD() ? 0 : 1;
     lt_indicator.leftTurn = GPIO_PIN_READ_ZZD() ? 0 : 1;
@@ -659,6 +655,7 @@ void app_car_controller_msg_handler(void)
     lt_indicator.motorFault = lt_sif.motorFault | lt_sif.hallFault;
 
     lt_indicator.parking = lt_sif.brake;
+#endif
 #ifdef BATTERY_MANAGER
     get_battery_voltage();
 #endif

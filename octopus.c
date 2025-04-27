@@ -84,10 +84,24 @@ uint8_t GetTaskManagerStateMachineId(void)
  */
 __attribute__((constructor)) void TaskManagerStateMachineInit(void)
 {
+    LOG_NONE("---------------------------------------------------------------------------\r\n");
+    LOG_NONE("              _____                                 \r\n");
+    LOG_NONE("______ _________  /_______ ________ ____  __________\r\n");
+    LOG_NONE("_  __ \\_  ___/_  __/_  __ \\___  __ \\_  / / /__  ___/\r\n");
+    LOG_NONE("/ /_/ // /__  / /_  / /_/ /__  /_/ // /_/ / _(__  ) \r\n");
+    LOG_NONE("\\____/ \\___/  \\__/  \\____/ _  .___/ \\__,_/  /____/  \r\n");
+    LOG_NONE("                           /_/                       \r\n");
+    LOG_NONE("  Embedded Real-Time Task Scheduler + FSM Engine\r\n");
+
+    LOG_NONE("---------------------------------------------------------------------------\r\n");
+    LOG_NONE(" Firmware  : v1.0.0\r\n");
+    LOG_NONE(" Compiled  : %s %s\r\n", __DATE__, __TIME__);
+    LOG_NONE(" Author    : Octopus Dev Team\r\n");
+    LOG_NONE("---------------------------------------------------------------------------\r\n");
     TaskManagerStateMachine_Id_ = 0; // Store the task ID in the global variable
     /// LOG_NONE("\r\n\r\n");//[1B blob data]
 #ifdef TASK_MANAGER_STATE_MACHINE_SOC
-    LOG_NONE("\r\n######################################BOOT  START######################################\r\n");
+    //LOG_NONE("\r\n######################################BOOT  START######################################\r\n");
     TaskManagerStateStopRunning();
 #endif
     LOG_LEVEL("OTMS task_id :%02x initializing...\r\n", TaskManagerStateMachine_Id_);
@@ -136,7 +150,7 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
     TaskManagerStateGoRunning();
 #endif
     /////////////////////////////////////////////////////////////////////////////////////////////////////
-    LOG_NONE("#####################################BOOT COMPLETE#####################################\r\n");
+    //LOG_NONE("#####################################BOOT COMPLETE#####################################\r\n");
 }
 
 __attribute__((destructor)) void exit_cleanup()
