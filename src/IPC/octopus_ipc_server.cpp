@@ -37,33 +37,33 @@
 #include "octopus_ipc_socket.hpp"
 #include "octopus_ipc_ptl.hpp"
 #include "../OTSM/octopus_carinfor.h"
-//#include "../OTSM/octopus_ipc.h"
+#include "../OTSM/octopus_task_manager.h"
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 typedef void (*CarInforCallback_t)(int cmd);
 
-typedef int (*TaskManagerStateDoCommandFunc)(uint8_t *, uint8_t);
+typedef void (*T_otsm_SendMessageFunc)(uint16_t task_module, uint16_t id, uint16_t param1, uint16_t param2);
 
-typedef void (*TaskManagerStateRegistCallbackFunc)(CarInforCallback_t callback);
-typedef void (*TaskManagerStateStopRunningFunc)();
+typedef void (*T_otsm_RegistCallbackFunc)(CarInforCallback_t callback);
+typedef void (*T_otsm_StopRunningFunc)();
 
-typedef void (*TaskManagerState_set_message_push_delay)(uint16_t delay_ms);
-typedef void (*TaskManagerState_ipc_doCommand)(uint8_t *data, uint8_t length);
+typedef void (*T_otsm_update_push_interval_msFunc)(uint16_t delay_ms);
+typedef void (*T_otsm_ipc_doCommandFunc)(uint8_t *data, uint8_t length);
 
 typedef carinfo_meter_t *(*T_otsm_get_meter_info)();
 typedef carinfo_indicator_t *(*T_otsm_get_indicator_info)();
 typedef carinfo_drivinfo_t *(*T_otsm_get_drivinfo_info)();
 
-TaskManagerStateStopRunningFunc otsm_taskManagerStateStopRunning = NULL;
-TaskManagerStateDoCommandFunc otsm_taskManagerStateDoCommand = NULL;
-TaskManagerStateRegistCallbackFunc otsm_taskManagerStateRegistCallbackFunc = NULL;
-TaskManagerState_set_message_push_delay ostsm_set_message_push_delay = NULL;
-TaskManagerState_ipc_doCommand ostsm_ipc_doCommand = NULL;
+T_otsm_RegistCallbackFunc otsm_RegistCallback = NULL;
+T_otsm_StopRunningFunc otsm_StopRunning = NULL;
+T_otsm_update_push_interval_msFunc otsm_update_push_interval_ms = NULL;
+T_otsm_ipc_doCommandFunc otsm_ipc_doCommand = NULL;
 
 T_otsm_get_meter_info otsm_get_meter_info = NULL;
 T_otsm_get_indicator_info otsm_get_indicator_info = NULL;
 T_otsm_get_drivinfo_info otsm_get_drivinfo_info = NULL;
 
+T_otsm_SendMessageFunc otsm_SendMessage = NULL;
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 // Function to handle client communication
 void ipc_server_CarInforNotify_Callback(int cmd_parameter);
@@ -71,9 +71,9 @@ void ipc_server_notify_carInfor_to_client(int client_fd, int cmd);
 void ipc_server_handle_client(int client_fd);
 
 int ipc_server_handle_calculation(int client_fd, const DataMessage &query_msg);
-int ipc_server_handle_car_infor(int client_fd, const DataMessage &query_msg);
 int ipc_server_handle_help(int client_fd, const DataMessage &query_msg);
 int ipc_server_handle_config(int client_fd, const DataMessage &query_msg);
+int ipc_server_handle_car_infor(int client_fd, const DataMessage &query_msg);
 // Path for the IPC socket file
 
 const char *socket_path = "/tmp/octopus/ipc_socket";
@@ -254,8 +254,8 @@ void ipc_server_signal_handler(int signum)
 {
     std::cout << "Server Interrupt signal received. Cleaning up...\n";
     server.close_socket(socket_fd_server);
-    if (otsm_taskManagerStateStopRunning)
-        otsm_taskManagerStateStopRunning();
+    if (otsm_StopRunning)
+        otsm_StopRunning();
     exit(signum);
 }
 
@@ -272,48 +272,38 @@ void ipc_server_initialize_otsm()
     /// std::cout << "Server sucecess to load otsm library: " << dlerror() << std::endl;
     ///  你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
     ///  例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
-
-    otsm_taskManagerStateStopRunning = (TaskManagerStateStopRunningFunc)dlsym(handle, "TaskManagerStateStopRunning");
-
-    if (!otsm_taskManagerStateStopRunning)
+    otsm_RegistCallback = (T_otsm_RegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
+    if (!otsm_RegistCallback)
     {
-        std::cerr << "Server Failed to find initialize function: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_RegistCallback: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    otsm_taskManagerStateDoCommand = (TaskManagerStateDoCommandFunc)dlsym(handle, "ipc_socket_doCommand");
-    if (!otsm_taskManagerStateDoCommand)
+    otsm_StopRunning = (T_otsm_StopRunningFunc)dlsym(handle, "TaskManagerStateStopRunning");
+    if (!otsm_StopRunning)
     {
-        std::cerr << "Server Failed to find otsm_taskManagerStateDoCommand: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_StopRunning function: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    otsm_taskManagerStateRegistCallbackFunc = (TaskManagerStateRegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
-    if (!otsm_taskManagerStateRegistCallbackFunc)
+    otsm_update_push_interval_ms = (T_otsm_update_push_interval_msFunc)dlsym(handle, "update_push_interval_ms");
+    if (!otsm_update_push_interval_ms)
     {
-        std::cerr << "Server Failed to find otsm_taskManagerStateRegistCallbackFunc: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_update_push_interval_ms: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    ostsm_set_message_push_delay = (TaskManagerState_set_message_push_delay)dlsym(handle, "update_push_interval_ms");
-    if (!ostsm_set_message_push_delay)
+    otsm_ipc_doCommand = (T_otsm_ipc_doCommandFunc)dlsym(handle, "otsm_do_ipc_Command");
+    if (!otsm_ipc_doCommand)
     {
-        std::cerr << "Server Failed to find ostsm_set_message_push_delay: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_ipc_doCommand: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
 
-    ostsm_ipc_doCommand = (TaskManagerState_ipc_doCommand)dlsym(handle, "otsm_do_ipc_Command");
-    if (!ostsm_ipc_doCommand)
-    {
-        std::cerr << "Server Failed to find ostsm_ipc_doCommand: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-     
     otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
     if (!otsm_get_meter_info)
     {
@@ -330,7 +320,7 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    //otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
+    // otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
     otsm_get_drivinfo_info = (T_otsm_get_drivinfo_info)dlsym(handle, "app_carinfo_get_drivinfo_info");
     if (!otsm_get_drivinfo_info)
     {
@@ -339,7 +329,15 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    otsm_taskManagerStateRegistCallbackFunc(ipc_server_CarInforNotify_Callback);
+    otsm_SendMessage = (T_otsm_SendMessageFunc)dlsym(handle, "send_message_adapter");
+    if (!otsm_SendMessage)
+    {
+        std::cerr << "Server Failed to find otsm_SendMessage: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_RegistCallback(ipc_server_CarInforNotify_Callback);
     /// 调用库中的初始化函数
     /// initialize_func();
 }
@@ -395,7 +393,7 @@ void ipc_server_initialize_server()
 
 int main()
 {
-    LOG_CC("\n#######################################################################################");
+    LOG_CC("\r\n#######################################################################################\r\n");
     LOG_CC("Octopus IPC Socket Server Started Successfully.");
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     ipc_server_initialize_otsm();
@@ -420,7 +418,7 @@ int main()
         {
             /// std::lock_guard<std::mutex> lock(clients_mutex);
             /// active_clients.insert(client_fd);
-            ipc_server_add_client(client_fd, "", false);
+            ipc_server_add_client(client_fd, "", true);
         }
 
         // Create a thread to handle the client communication
@@ -432,8 +430,8 @@ int main()
 
     // Close the server socket before exiting
     server.close_socket(socket_fd_server);
-    if (otsm_taskManagerStateStopRunning)
-        otsm_taskManagerStateStopRunning();
+    if (otsm_StopRunning)
+        otsm_StopRunning();
 
     return 0;
 }
@@ -454,7 +452,7 @@ void ipc_server_handle_client(int client_fd)
     std::cout << "Server handling client connection [" << client_fd << "]..." << std::endl;
     int handle_result = 0;
     QueryResult query_result;
-    DataMessage query_msg;
+    DataMessage data_message;
 
     // Main processing loop: handle client queries continuously
     while (true)
@@ -488,49 +486,49 @@ void ipc_server_handle_client(int client_fd)
         ////////////////////////////////////////////////////////////////////////////////////////////
         ////////////////////////////////////////////////////////////////////////////////////////////
         // Call the static function deserializeMessage of the DataMessage class, passing query_result.data byte data for deserialization,
-        // and assign the returned DataMessage object to the query_msg variable.
-        query_msg = DataMessage::deserializeMessage(query_result.data);
+        // and assign the returned DataMessage object to the data_message variable.
+        data_message = DataMessage::deserializeMessage(query_result.data);
 
         // Validate the packet before processing
-        if (!query_msg.isValid())
+        if (!data_message.isValid())
         {
             std::cerr << "Server Invalid packet received from client [" << client_fd << "]." << std::endl;
-            query_msg.printMessage("Server");
+            data_message.printMessage("Server");
             continue;
         }
 
         // Dispatch to the appropriate handler based on group ID
-        switch (query_msg.msg_group)
+        switch (data_message.msg_group)
         {
         case MSG_GROUP_HELP:
-            handle_result = ipc_server_handle_help(client_fd, query_msg); // Help/info request
+            handle_result = ipc_server_handle_help(client_fd, data_message); // Help/info request
             break;
 
-        //case MSG_GROUP_SET:
-        case MSG_GROUP_SETTING:
-            handle_result = ipc_server_handle_config(client_fd, query_msg); // Configuration command
+        // case MSG_GROUP_SET:
+        case MSG_GROUP_IPC_CONFIG:
+            handle_result = ipc_server_handle_config(client_fd, data_message); // Configuration command
             break;
 
         case 2:
         case 3:
         case 4:
-            handle_result = ipc_server_handle_calculation(client_fd, query_msg); // Placeholder groups
+            handle_result = ipc_server_handle_calculation(client_fd, data_message); // Placeholder groups
             break;
 
         case MSG_GROUP_CAR:
-            handle_result = ipc_server_handle_car_infor(client_fd, query_msg); // Vehicle info commands
+            handle_result = ipc_server_handle_car_infor(client_fd, data_message); // Vehicle info commands
             break;
 
         default:
             // Unknown group, fallback to help
-            handle_result = ipc_server_handle_help(client_fd, query_msg);
+            handle_result = ipc_server_handle_help(client_fd, data_message);
             break;
         }
 
         // Log success after handling the message
         std::cout << "Server handling client [" << client_fd << "] "
-                  << "[Group: " << static_cast<int>(query_msg.msg_group) << "] "
-                  << "[Msg: " << static_cast<int>(query_msg.msg_id) << "] done." << std::endl;
+                  << "[Group: " << static_cast<int>(data_message.msg_group) << "] "
+                  << "[Msg: " << static_cast<int>(data_message.msg_id) << "] done." << std::endl;
     }
 
 cleanup:
@@ -582,16 +580,16 @@ int ipc_server_handle_config(int client_fd, const DataMessage &query_msg)
         bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
         ipc_server_update_client(cfd, is_active); // Update the client state (active/inactive)
         std::cout << "Server set client [" << cfd << "] request push:" << is_active << std::endl;
-        if((query_msg.data.size() >= 3))
-             ostsm_set_message_push_delay(query_msg.data[2]*10);
+        if ((query_msg.data.size() >= 3))
+            otsm_update_push_interval_ms(query_msg.data[2] * 10);
     }
     else if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_PUSH_DELAY)
     {
-        if (ostsm_set_message_push_delay)
+        if (otsm_update_push_interval_ms)
         {
             int time_interval = query_msg.data[1] * 10; // MERGE_BYTES(query_msg.data[1], query_msg.data[2]);
             std::cout << "Server set client [" << cfd << "] time interval:" << time_interval << std::endl;
-            ostsm_set_message_push_delay(time_interval);
+            otsm_update_push_interval_ms(time_interval);
         }
     }
     else if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_IP)
@@ -674,9 +672,41 @@ int ipc_server_handle_calculation(int client_fd, const DataMessage &query_msg)
     return calc_result;
 }
 
-int ipc_server_handle_car_infor(int client_fd, const DataMessage &query_msg)
+int ipc_server_handle_car_infor(int client_fd, const DataMessage &data_message)
 {
-    ipc_server_notify_carInfor_to_client(client_fd, query_msg.msg_id);
+    switch (data_message.msg_id)
+    {
+    case MSG_CAR_SETTING_SAVE:
+        if (otsm_SendMessage)
+        {
+            if (data_message.data.size() >= 1)
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SETTING_SAVE, data_message.data[0], 0);
+            else
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SETTING_SAVE, 0, 0);
+        }
+        break;
+    case MSG_CAR_SET_LIGHT:
+        if (otsm_SendMessage)
+        {
+            if (data_message.data.size() >= 1)
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_LIGHT, data_message.data[0], 0);
+            else
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_LIGHT, 0, 0);
+        }
+        break;
+    case MSG_CAR_SET_GEAR_LEVEL:
+        if (otsm_SendMessage)
+        {
+            if (data_message.data.size() >= 1)
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_GEAR_LEVEL, data_message.data[0], 0);
+            else
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_GEAR_LEVEL, 0, 0);
+        }
+        break;
+    default:
+        ipc_server_notify_carInfor_to_client(client_fd, data_message.msg_id);
+    }
+
     return 0;
 }
 // Helper function to handle the car info response logic
@@ -692,7 +722,7 @@ void ipc_server_send_car_info_to_client(int client_fd, int msg, T *car_info, siz
     // Create a DataMessage to follow the protocol format
     DataMessage data_msg;
     data_msg.msg_group = MSG_GROUP_CAR; // Set appropriate group based on the info type
-    data_msg.msg_id = msg;             // Set message ID based on info type
+    data_msg.msg_id = msg;              // Set message ID based on info type
 
     // Directly copy the car info data into the msg.data vector
     data_msg.data.clear(); // Clear any existing data

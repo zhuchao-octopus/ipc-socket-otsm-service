@@ -75,8 +75,14 @@ extern "C"
      */
     bool serialport_set_callback(SerialPortHandle handle, DataCallback callback)
     {
-        if (!handle || !callback)
+        if (!handle)
         {
+            std::cout << "Failed to serialport_set_callback : handle is null" << std::endl;
+            return false;
+        }
+        if (!callback)
+        {
+            std::cout << "Failed to serialport_set_callback : callback is null" << std::endl;
             return false;
         }
 

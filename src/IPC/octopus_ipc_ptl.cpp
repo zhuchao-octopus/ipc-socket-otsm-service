@@ -15,7 +15,7 @@
 #include <arpa/inet.h>
 #include "octopus_ipc_ptl.hpp"
 
-//#define CHECKSUM_CRC_256
+// #define CHECKSUM_CRC_256
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 //[Header:2字节][Group:1字节][Msg:1字节][Length:2字节][Data:Length字节]
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -61,10 +61,10 @@ DataMessage::DataMessage(const std::vector<uint8_t> &data_array)
 
 DataMessage::DataMessage(uint8_t msg_group, uint8_t msg_id, const std::vector<uint8_t> &data_array)
 {
-    ///size_t head_Size = sizeof(this->header) + sizeof(this->group) + sizeof(this->msg) + sizeof(this->length);
+    /// size_t head_Size = sizeof(this->header) + sizeof(this->group) + sizeof(this->msg) + sizeof(this->length);
 
     /// Ensure there is enough data for header, group, and msg
-    ///if (data_array.size() < baseSize)
+    /// if (data_array.size() < baseSize)
     ///{
     ///    std::cerr << "DataMessage Insufficient data to deserialize." << std::endl;
     ///    return;
@@ -116,7 +116,8 @@ std::vector<uint8_t> DataMessage::serializeMessage() const
 #ifdef CHECKSUM_CRC_256
     // Calculate checksum only for the data section
     uint8_t checksum = 0;
-    for (size_t i = 0; i < serializedData.size(); ++i) {
+    for (size_t i = 0; i < serializedData.size(); ++i)
+    {
         checksum += serializedData[i];
     }
     // Append checksum
@@ -143,7 +144,7 @@ DataMessage DataMessage::deserializeMessage(const std::vector<uint8_t> &buffer)
     if (buffer.size() < baseSize)
     {
         // throw std::runtime_error("Insufficient data to deserialize.");
-        //std::cerr << "DataMessage Error during deserialization" << std::endl;
+        // std::cerr << "DataMessage Error during deserialization" << std::endl;
         return data_message;
     }
 
@@ -199,8 +200,8 @@ void DataMessage::printMessage(const std::string &tag) const
 {
     std::cout << tag << ": Header 0x" << std::hex << std::setw(2) << std::setfill('0')
               << msg_header
-              << ", Group: 0x" << static_cast<int>(msg_group)
-              << ", Msg: 0x" << static_cast<int>(msg_id)
+              << ", Group: 0x" << std::setw(2) << static_cast<int>(msg_group)
+              << ", Msg: 0x" << std::setw(2) << static_cast<int>(msg_id)
               << ", Length: " << std::dec << static_cast<int>(msg_length)
               << ", Data: ";
 

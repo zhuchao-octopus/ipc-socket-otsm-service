@@ -49,7 +49,7 @@ bool SerialPort::openPort()
     serialFd = open(portName.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (serialFd == -1)
     {
-        std::cerr << "Failed to open serial port: " << portName << std::endl;
+        std::cout << "Failed to open serial port: " << portName << std::endl;
         return false;
     }
 
@@ -100,7 +100,7 @@ bool SerialPort::openPort()
     epollFd = epoll_create1(0);
     if (epollFd == -1)
     {
-        std::cerr << "Failed to create epoll instance." << std::endl;
+        std::cout << "Failed to create epoll instance." << std::endl;
         close(serialFd);
         return false;
     }
@@ -112,7 +112,7 @@ bool SerialPort::openPort()
 
     if (epoll_ctl(epollFd, EPOLL_CTL_ADD, serialFd, &ev) == -1)
     {
-        std::cerr << "Failed to add serial fd to epoll." << std::endl;
+        std::cout << "Failed to add serial fd to epoll." << std::endl;
         close(serialFd);
         return false;
     }
@@ -225,7 +225,7 @@ void SerialPort::readLoop()
             }
 
             // Log other errors returned by epoll_wait
-            std::cerr << "Error in epoll_wait: " << strerror(errno) << std::endl;
+            std::cout << "Error in epoll_wait: " << strerror(errno) << std::endl;
             break; // If it's a non-recoverable error, break the loop and stop reading
         }
 
@@ -238,12 +238,11 @@ void SerialPort::readLoop()
             {
                 // If data was successfully read, convert it into a string
                 #if 0
-                std::string receivedData(buffer, bytesRead);
-                // Log raw data in hex format
+                std::string receivedData(reinterpret_cast<const char*>(buffer), bytesRead);
+                // 以十六进制形式打印接收到的数据
                 std::cout << "[Serial Read] " << bytesRead << " bytes received: ";
-                for (int i = 0; i < bytesRead; ++i)
-                {
-                    printf("%02X ", static_cast<unsigned char>(buffer[i]));
+                for (int i = 0; i < bytesRead; ++i) {
+                    printf("%02X ", buffer[i]);
                 }
                 std::cout << " | As string: \"" << receivedData << "\"" << std::endl;
                 #endif

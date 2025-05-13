@@ -1,7 +1,3 @@
-
-#ifndef OCTOPUS_IPC_PTL_HANDLER_HPP
-#define OCTOPUS_IPC_PTL_HANDLER_HPP
-
 /*
  * File: octopus_ipc_ptl_handler.hpp
  * Description: This header file defines the IPC (Inter-Process Communication) message structure and message group types
@@ -24,79 +20,15 @@
  */
 /// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+#ifndef __OCTOPUS_IPC_PTL_HANDLER_HPP__
+#define __OCTOPUS_IPC_PTL_HANDLER_HPP__
+
 #include <vector>
 #include <iostream>
 #include <iomanip>
 #include <stdexcept>
-/// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Message group definitions for IPC socket communication
-enum MessageGroup
-{
-    MSG_GROUP_0 = 0,
-    MSG_GROUP_1,
-    MSG_GROUP_2,
-    MSG_GROUP_3,
-    MSG_GROUP_4,
-    MSG_GROUP_5,
-    MSG_GROUP_6,
-    MSG_GROUP_7,
-    MSG_GROUP_8,
-    MSG_GROUP_9,
-    MSG_GROUP_10,
-    MSG_GROUP_11,
-    MSG_GROUP_12,
-    MSG_GROUP_13,
-    MSG_GROUP_14,
-    MSG_GROUP_15
-};
-
-// Individual message definitions
-enum Message_Group_0_Cmd_Id //0
-{
-    MSG_IPC_SOCKET_HELP_INFO = 0,
-};
-
-enum Message_Group_1_Cmd_Id //50
-{
-    MSG_IPC_SOCKET_CONFIG_FLAG = 50,
-    MSG_IPC_SOCKET_CONFIG_PUSH_DELAY,
-    MSG_IPC_SOCKET_CONFIG_IP,
-};
-
-/**
- * @brief  Message Group 11 - Car Information Commands
- * @note   Command ID base: 100
- */
-typedef enum
-{
-    MSG_CAR_GET_INDICATOR_INFO = 100,   // Request indicator (lights, signals) status
-    MSG_CAR_GET_METER_INFO,              // Request meter readings (odometer, speed, voltage)
-    MSG_CAR_GET_DRIVINFO_INFO,           // Request driving information (gear, SOC, etc.)
-
-    MSG_CAR_METER_ODO_CLEAR,             // Clear total odometer (reset total distance)
-    MSG_CAR_METER_TIME_CLEAR,            // Clear accumulated ride time
-    MSG_CAR_METER_TRIP_DISTANCE_CLEAR,   // Clear trip distance counter (trip meter)
-
-    MSG_CAR_SET_LOW_BEAM,                // Control low beam headlights (turn ON/OFF)
-    MSG_CAR_SET_HIGH_BEAM,               // Control high beam headlights (turn ON/OFF)
-
-} Message_Group_11_Cmd_Id;
-
-
-/// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#define MERGE_BYTES(byte1, byte2) ((static_cast<unsigned int>(byte1) << 8) | (static_cast<unsigned int>(byte2)))
-
-#define SPLIT_TO_BYTES(value, byte1, byte2)                  \
-    byte1 = static_cast<unsigned char>((value >> 8) & 0xFF); \
-    byte2 = static_cast<unsigned char>(value & 0xFF);
-
-#define MSG_GROUP_HELP         MSG_GROUP_0
-#define MSG_GROUP_SET          MSG_GROUP_1
-#define MSG_GROUP_SETTING      MSG_GROUP_SET
-#define MSG_GROUP_CAR          MSG_GROUP_11
+#include "../OTSM/octopus_message.h"
 
 /// @brief ///////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////

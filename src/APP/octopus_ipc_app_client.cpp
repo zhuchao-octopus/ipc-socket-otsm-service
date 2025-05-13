@@ -89,6 +89,11 @@ bool ipc_file_exists_and_executable(const std::string &process_path)
  */
 bool ipc_is_socket_server_process_running(const std::string &process_name)
 {
+    if (process_name.empty())
+    {
+        std::cout << "Client: process_name is empty, invalid check." << std::endl;
+        return false;
+    }
     // Open a pipe to run the "ps aux" command which lists all running processes.
     FILE *fp = popen("ps aux", "r");
     if (fp == nullptr)
@@ -178,7 +183,7 @@ bool ipc_start_process_as_server(const std::string &process_path)
         // std::string ps_command = "ps aux | grep '" + process_path + "'"; // Using 'grep' to filter the output
         // system(ps_command.c_str());                                      // Execute the ps command to check if the process is running
         std::this_thread::sleep_for(std::chrono::seconds(2)); // Wait for 2 seconds before reconnecting
-        if (!ipc_is_socket_server_process_running(process_path))
+        if (!ipc_is_socket_server_process_running(ipc_server_name))
         {
             std::cout << "Client: Bad Failed to start IPC Socket Server,restart " << process_path << std::endl;
             return false;
@@ -789,7 +794,7 @@ void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
                                      // If socket is still unavailable after max wait time, report and abort
                                      if (socket_client.load() < 0)
                                      {
-                                         std::cerr << "App: Cannot send command, no active connection after waiting.\n";
+                                         std::cout << "Client: Cannot send command, no active connection after waiting " << waited_ms << " delay " << delay_ms << ".\n";
                                          return;
                                      }
 
