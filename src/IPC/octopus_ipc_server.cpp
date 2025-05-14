@@ -52,6 +52,8 @@ typedef void (*T_otsm_ipc_doCommandFunc)(uint8_t *data, uint8_t length);
 
 typedef carinfo_meter_t *(*T_otsm_get_meter_info)();
 typedef carinfo_indicator_t *(*T_otsm_get_indicator_info)();
+typedef carinfo_battery_t *(*T_otsm_get_battery_info)();
+typedef carinfo_error_t *(*T_otsm_get_error_info)();
 typedef carinfo_drivinfo_t *(*T_otsm_get_drivinfo_info)();
 
 T_otsm_RegistCallbackFunc otsm_RegistCallback = NULL;
@@ -61,6 +63,8 @@ T_otsm_ipc_doCommandFunc otsm_ipc_doCommand = NULL;
 
 T_otsm_get_meter_info otsm_get_meter_info = NULL;
 T_otsm_get_indicator_info otsm_get_indicator_info = NULL;
+T_otsm_get_battery_info otsm_get_battery_info = NULL;
+T_otsm_get_error_info otsm_get_error_info = NULL;
 T_otsm_get_drivinfo_info otsm_get_drivinfo_info = NULL;
 
 T_otsm_SendMessageFunc otsm_SendMessage = NULL;
@@ -257,183 +261,6 @@ void ipc_server_signal_handler(int signum)
     if (otsm_StopRunning)
         otsm_StopRunning();
     exit(signum);
-}
-
-void ipc_server_initialize_otsm()
-{
-    // 加载共享库
-    std::cout << "Server initialize otsm started." << std::endl;
-    void *handle = dlopen("libOTSM.so", RTLD_LAZY);
-    if (!handle)
-    {
-        std::cerr << "Server Failed to load otsm library: " << dlerror() << std::endl;
-        return;
-    }
-    /// std::cout << "Server sucecess to load otsm library: " << dlerror() << std::endl;
-    ///  你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
-    ///  例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
-    otsm_RegistCallback = (T_otsm_RegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
-    if (!otsm_RegistCallback)
-    {
-        std::cerr << "Server Failed to find otsm_RegistCallback: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    otsm_StopRunning = (T_otsm_StopRunningFunc)dlsym(handle, "TaskManagerStateStopRunning");
-    if (!otsm_StopRunning)
-    {
-        std::cerr << "Server Failed to find otsm_StopRunning function: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    otsm_update_push_interval_ms = (T_otsm_update_push_interval_msFunc)dlsym(handle, "update_push_interval_ms");
-    if (!otsm_update_push_interval_ms)
-    {
-        std::cerr << "Server Failed to find otsm_update_push_interval_ms: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    otsm_ipc_doCommand = (T_otsm_ipc_doCommandFunc)dlsym(handle, "otsm_do_ipc_Command");
-    if (!otsm_ipc_doCommand)
-    {
-        std::cerr << "Server Failed to find otsm_ipc_doCommand: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
-    if (!otsm_get_meter_info)
-    {
-        std::cerr << "Server Failed to find otsm_get_meter_info: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    otsm_get_indicator_info = (carinfo_indicator_t * (*)()) dlsym(handle, "app_carinfo_get_indicator_info");
-    if (!otsm_get_indicator_info)
-    {
-        std::cerr << "Server Failed to find otsm_get_indicator_info: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    // otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
-    otsm_get_drivinfo_info = (T_otsm_get_drivinfo_info)dlsym(handle, "app_carinfo_get_drivinfo_info");
-    if (!otsm_get_drivinfo_info)
-    {
-        std::cerr << "Server Failed to find otsm_get_drivinfo_info: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    otsm_SendMessage = (T_otsm_SendMessageFunc)dlsym(handle, "send_message_adapter");
-    if (!otsm_SendMessage)
-    {
-        std::cerr << "Server Failed to find otsm_SendMessage: " << dlerror() << std::endl;
-        dlclose(handle);
-        return;
-    }
-
-    otsm_RegistCallback(ipc_server_CarInforNotify_Callback);
-    /// 调用库中的初始化函数
-    /// initialize_func();
-}
-
-void ipc_server_initialize_server()
-{
-    std::cout << "[Server] Initialization started." << std::endl;
-
-    // Ignore SIGPIPE to prevent crash when writing to a closed socket
-    signal(SIGPIPE, SIG_IGN);
-
-    // Handle Ctrl+C to allow graceful shutdown
-    signal(SIGINT, ipc_server_signal_handler);
-
-    // Ensure socket directory exists
-    if (!ipc_server_ensure_directory_exists(socket_path))
-    {
-        std::cerr << "[Server] Failed to ensure socket directory exists." << std::endl;
-        return;
-    }
-
-    // Clean up old socket file if it exists
-    ipc_server_remove_old_socket_bind_file();
-
-    // Create the server socket
-    socket_fd_server = server.open_socket();
-    if (socket_fd_server <= 0)
-    {
-        std::cerr << "[Server] Failed to create server socket." << std::endl;
-        return;
-    }
-
-    // Bind the socket
-    if (!server.bind_server_to_socket(socket_fd_server))
-    {
-        std::cerr << "[Server] Failed to bind server socket." << std::endl;
-        return;
-    }
-
-    // Begin listening for incoming connections
-    if (!server.start_listening(socket_fd_server))
-    {
-        std::cerr << "[Server] Failed to start listening." << std::endl;
-        return;
-    }
-
-    // Optional: set buffer sizes
-    // server.query_buffer_size = 20;
-    // server.respo_buffer_size = 20;
-
-    std::cout << "Server Waiting for client connections..." << std::endl;
-}
-
-int main()
-{
-    LOG_CC("\r\n#######################################################################################\r\n");
-    LOG_CC("Octopus IPC Socket Server Started Successfully.");
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    ipc_server_initialize_otsm();
-    std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
-    ipc_server_initialize_server();
-
-    ////////////////////////////////////////////////////////////////////////////////////////////////////
-    // Main loop to accept and handle client connections
-    while (true)
-    {
-        int client_fd = server.wait_and_accept(socket_fd_server);
-
-        // If accepting a client fails, continue to the next iteration
-        if (client_fd < 0)
-        {
-            std::cerr << "Server Failed to accept client connection" << std::endl;
-            continue;
-            // break; for test
-        }
-
-        // Lock the clients mutex to safely modify the active clients set
-        {
-            /// std::lock_guard<std::mutex> lock(clients_mutex);
-            /// active_clients.insert(client_fd);
-            ipc_server_add_client(client_fd, "", true);
-        }
-
-        // Create a thread to handle the client communication
-        std::thread client_thread(ipc_server_handle_client, client_fd);
-
-        // Detach the thread so it runs independently
-        client_thread.detach();
-    }
-
-    // Close the server socket before exiting
-    server.close_socket(socket_fd_server);
-    if (otsm_StopRunning)
-        otsm_StopRunning();
-
-    return 0;
 }
 
 // Function to handle communication with a specific client
@@ -764,6 +591,18 @@ void ipc_server_notify_carInfor_to_client(int client_fd, int cmd)
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
         break;
     }
+    case MSG_CAR_GET_BATTERY_INFO:
+    {
+        carinfo_battery_t *carinfo_battery = otsm_get_battery_info();
+        ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_battery, sizeof(carinfo_battery_t), "handle_car_infor (battery)");
+        break;
+    }
+    case MSG_CAR_GET_ERROR_INFO:
+    {
+        carinfo_error_t *carinfo_error = otsm_get_error_info();
+        ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_error, sizeof(carinfo_error_t), "handle_car_infor (error)");
+        break;
+    }
     case MSG_CAR_GET_DRIVINFO_INFO:
     {
         carinfo_drivinfo_t *carinfo_drivinfo = otsm_get_drivinfo_info();
@@ -779,3 +618,196 @@ void ipc_server_notify_carInfor_to_client(int client_fd, int cmd)
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void ipc_server_initialize_otsm()
+{
+    // 加载共享库
+    std::cout << "Server initialize otsm started." << std::endl;
+    void *handle = dlopen("libOTSM.so", RTLD_LAZY);
+    if (!handle)
+    {
+        std::cerr << "Server Failed to load otsm library: " << dlerror() << std::endl;
+        return;
+    }
+    /// std::cout << "Server sucecess to load otsm library: " << dlerror() << std::endl;
+    ///  你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
+    ///  例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
+    otsm_RegistCallback = (T_otsm_RegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
+    if (!otsm_RegistCallback)
+    {
+        std::cerr << "Server Failed to find otsm_RegistCallback: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_StopRunning = (T_otsm_StopRunningFunc)dlsym(handle, "TaskManagerStateStopRunning");
+    if (!otsm_StopRunning)
+    {
+        std::cerr << "Server Failed to find otsm_StopRunning function: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_update_push_interval_ms = (T_otsm_update_push_interval_msFunc)dlsym(handle, "update_push_interval_ms");
+    if (!otsm_update_push_interval_ms)
+    {
+        std::cerr << "Server Failed to find otsm_update_push_interval_ms: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_ipc_doCommand = (T_otsm_ipc_doCommandFunc)dlsym(handle, "otsm_do_ipc_Command");
+    if (!otsm_ipc_doCommand)
+    {
+        std::cerr << "Server Failed to find otsm_ipc_doCommand: " << dlerror() << std::endl;
+        //dlclose(handle);
+        //return;
+    }
+
+    otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
+    if (!otsm_get_meter_info)
+    {
+        std::cerr << "Server Failed to find otsm_get_meter_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_get_indicator_info = (carinfo_indicator_t * (*)()) dlsym(handle, "app_carinfo_get_indicator_info");
+    if (!otsm_get_indicator_info)
+    {
+        std::cerr << "Server Failed to find otsm_get_indicator_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_get_battery_info = (carinfo_battery_t * (*)()) dlsym(handle, "app_carinfo_get_battery_info");
+    if (!otsm_get_battery_info)
+    {
+        std::cerr << "Server Failed to find otsm_get_battery_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_get_error_info = (carinfo_error_t * (*)()) dlsym(handle, "app_carinfo_get_error_info");
+    if (!otsm_get_error_info)
+    {
+        std::cerr << "Server Failed to find otsm_get_error_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    // otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
+    otsm_get_drivinfo_info = (T_otsm_get_drivinfo_info)dlsym(handle, "app_carinfo_get_drivinfo_info");
+    if (!otsm_get_drivinfo_info)
+    {
+        std::cerr << "Server Failed to find otsm_get_drivinfo_info: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_SendMessage = (T_otsm_SendMessageFunc)dlsym(handle, "send_message_adapter");
+    if (!otsm_SendMessage)
+    {
+        std::cerr << "Server Failed to find otsm_SendMessage: " << dlerror() << std::endl;
+        dlclose(handle);
+        return;
+    }
+
+    otsm_RegistCallback(ipc_server_CarInforNotify_Callback);
+    /// 调用库中的初始化函数
+    /// initialize_func();
+}
+
+void ipc_server_initialize_server()
+{
+    std::cout << "[Server] Initialization started." << std::endl;
+
+    // Ignore SIGPIPE to prevent crash when writing to a closed socket
+    signal(SIGPIPE, SIG_IGN);
+
+    // Handle Ctrl+C to allow graceful shutdown
+    signal(SIGINT, ipc_server_signal_handler);
+
+    // Ensure socket directory exists
+    if (!ipc_server_ensure_directory_exists(socket_path))
+    {
+        std::cerr << "[Server] Failed to ensure socket directory exists." << std::endl;
+        return;
+    }
+
+    // Clean up old socket file if it exists
+    ipc_server_remove_old_socket_bind_file();
+
+    // Create the server socket
+    socket_fd_server = server.open_socket();
+    if (socket_fd_server <= 0)
+    {
+        std::cerr << "[Server] Failed to create server socket." << std::endl;
+        return;
+    }
+
+    // Bind the socket
+    if (!server.bind_server_to_socket(socket_fd_server))
+    {
+        std::cerr << "[Server] Failed to bind server socket." << std::endl;
+        return;
+    }
+
+    // Begin listening for incoming connections
+    if (!server.start_listening(socket_fd_server))
+    {
+        std::cerr << "[Server] Failed to start listening." << std::endl;
+        return;
+    }
+
+    // Optional: set buffer sizes
+    // server.query_buffer_size = 20;
+    // server.respo_buffer_size = 20;
+
+    std::cout << "Server Waiting for client connections..." << std::endl;
+}
+
+int main()
+{
+    LOG_CC("\r\n#######################################################################################\r\n");
+    LOG_CC("Octopus IPC Socket Server Started Successfully.");
+    ////////////////////////////////////////////////////////////////////////////////////////////////////
+    ipc_server_initialize_otsm();
+    std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
+    ipc_server_initialize_server();
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////
+    // Main loop to accept and handle client connections
+    while (true)
+    {
+        int client_fd = server.wait_and_accept(socket_fd_server);
+
+        // If accepting a client fails, continue to the next iteration
+        if (client_fd < 0)
+        {
+            std::cerr << "Server Failed to accept client connection" << std::endl;
+            continue;
+            // break; for test
+        }
+
+        // Lock the clients mutex to safely modify the active clients set
+        {
+            /// std::lock_guard<std::mutex> lock(clients_mutex);
+            /// active_clients.insert(client_fd);
+            ipc_server_add_client(client_fd, "", true);
+        }
+
+        // Create a thread to handle the client communication
+        std::thread client_thread(ipc_server_handle_client, client_fd);
+
+        // Detach the thread so it runs independently
+        client_thread.detach();
+    }
+
+    // Close the server socket before exiting
+    server.close_socket(socket_fd_server);
+    if (otsm_StopRunning)
+        otsm_StopRunning();
+
+    return 0;
+}

@@ -71,10 +71,9 @@ bool SerialPort::openPort()
     // options.c_cflag = B115200|CS8|CLOCAL|CREAD;
     // Configure local modes (line discipline)
     options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG); // Raw input (non-canonical), no echo, no signal chars
-
     // Configure input modes
     options.c_iflag &= ~(IXON | IXOFF | IXANY); // Disable XON/XOFF software flow control
-
+    options.c_iflag &= ~(ICRNL | INLCR);
     // Configure output modes
     options.c_oflag &= ~OPOST; // Raw output (disable output processing)
 
@@ -171,15 +170,15 @@ int SerialPort::writeData(const uint8_t *buffer, size_t length)
 
     if (bytesWritten == static_cast<ssize_t>(length))
     {
-        // Log the data in hex format for debugging
-        #if 0
+// Log the data in hex format for debugging
+#if 0
          std::cout << "[Serial Write] Success: ";
          for (size_t i = 0; i < length; ++i)
          {
             printf("%02X ", buffer[i]);
          }
          std::cout << std::endl;
-         #endif
+#endif
         return bytesWritten;
     }
     else
@@ -208,7 +207,7 @@ void SerialPort::setCallback(DataCallback callback)
 void SerialPort::readLoop()
 {
     struct epoll_event events[1]; // Array to store the events returned by epoll_wait
-    uint8_t buffer[512];             // Buffer for reading data from the serial port
+    uint8_t buffer[512];          // Buffer for reading data from the serial port
 
     // Infinite loop to continually monitor for incoming data on the serial port
     while (isRunning)
@@ -236,8 +235,8 @@ void SerialPort::readLoop()
             int bytesRead = read(serialFd, buffer, sizeof(buffer));
             if (bytesRead > 0)
             {
-                // If data was successfully read, convert it into a string
-                #if 0
+// If data was successfully read, convert it into a string
+#if 0
                 std::string receivedData(reinterpret_cast<const char*>(buffer), bytesRead);
                 // 以十六进制形式打印接收到的数据
                 std::cout << "[Serial Read] " << bytesRead << " bytes received: ";
@@ -245,12 +244,12 @@ void SerialPort::readLoop()
                     printf("%02X ", buffer[i]);
                 }
                 std::cout << " | As string: \"" << receivedData << "\"" << std::endl;
-                #endif
+#endif
                 // If a callback is set, call the callback function to process the received data
                 if (dataCallback)
                 {
-                    //dataCallback(receivedData); // Process the received data
-                    dataCallback(reinterpret_cast<const uint8_t*>(buffer), bytesRead);
+                    // dataCallback(receivedData); // Process the received data
+                    dataCallback(reinterpret_cast<const uint8_t *>(buffer), bytesRead);
                 }
             }
         }
