@@ -1,0 +1,4 @@
+[submodule "src/OTSM"]
+	path = src/OTSM
+	url = https://github.com/zhuchao-octopus/open-task-manager-state-machine.git
+	branch = linux-platform
