@@ -139,6 +139,7 @@ void hal_gpio_init(uint8_t task_id)
 // Function to get the GPIO key mask code (ITE Open RTOS version, returns 0)
 uint8_t hal_get_gpio_key_mask_code(uint8_t pin)
 {
-    return 0; // Always return 0 for ITE Open RTOS
+   // Return a corresponding key mask based on the pin number
+   return 0; // Default return value if pin doesn't match any case
 }
 #endif

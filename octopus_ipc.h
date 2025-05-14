@@ -32,9 +32,7 @@
 /*******************************************************************************
  * MACROS
  ******************************************************************************/
-#define CMD_GET_INDICATOR_INFO 100
-#define CMD_GET_METER_INFO 101
-#define CMD_GET_DRIVINFO_INFO 102
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -81,7 +79,7 @@ extern "C"
 
     void update_push_interval_ms(uint16_t delay_ms);
 
-    int otsm_do_ipc_Command(uint8_t *data, uint8_t length);
+    void otsm_do_ipc_Command(uint8_t *data, uint8_t length);
 
 #ifdef __cplusplus
 }

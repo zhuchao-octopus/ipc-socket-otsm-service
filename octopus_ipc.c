@@ -24,8 +24,11 @@
 #include "octopus_system.h"
 #include "octopus_tickcounter.h"
 #include "octopus_msgqueue.h"
-
 #include "octopus_ipc.h"
+#include "octopus_message.h"
+#include "octopus_uart_hal.h"
+#include "octopus_carinfor.h"
+#include "octopus_flash.h"
 /*******************************************************************************
  * Debug Switch Macros
  * Define debug levels or other switches as required.
@@ -42,8 +45,8 @@
  * Declare static functions used only within this file.
  ******************************************************************************/
 static bool ipc_socket_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
-static bool ipc_socket_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
-static void ipc_notify_message_to_all(int cmd_parameter);
+static bool ipc_socket_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuffer);
+static void ipc_notify_message_to_client(uint8_t msg_id, uint8_t cmd_parameter);
 /*******************************************************************************
  * Global Variables
  * Define variables accessible across multiple files if needed.
@@ -58,7 +61,7 @@ static CarInforCallback_t CarInforCallback = NULL;
 static uint8_t l_u8_idle_swich = 0;
 static uint32_t l_t_msg_wait_10_timer; // Timer for 10 ms message waiting period
 static uint32_t l_t_msg_wait_500_timer;
-static uint16_t l_t_callback_delay = 0;//1000;
+static uint16_t l_t_callback_delay = 0; // 1000;
 /*******************************************************************************
  * Global Function Implementations
  ******************************************************************************/
@@ -76,7 +79,7 @@ void app_ipc_socket_init_running(void)
 {
     LOG_LEVEL("app_ipc_socket_init_running\r\n");
     OTMS(TASK_ID_IPC_SOCKET, OTMS_S_INVALID);
-    ptl_register_module(A2M_MOD_IPC, ipc_socket_send_handler, ipc_socket_receive_handler);
+    ptl_register_module(SOC_TO_MCU_MOD_IPC, ipc_socket_send_handler, ipc_socket_receive_handler);
 }
 
 /**
@@ -100,7 +103,12 @@ void app_ipc_socket_assert_running(void)
 {
     StartTickCounter(&l_t_msg_wait_10_timer);
     StartTickCounter(&l_t_msg_wait_500_timer);
-    ptl_reqest_running(A2M_MOD_IPC);
+
+#ifdef TASK_MANAGER_STATE_MACHINE_MCU
+    ptl_reqest_running(MCU_TO_SOC_MOD_IPC);
+#elif defined(TASK_MANAGER_STATE_MACHINE_SOC)
+    ptl_reqest_running(SOC_TO_MCU_MOD_IPC);
+#endif
     OTMS(TASK_ID_IPC_SOCKET, OTMS_S_RUNNING);
 }
 
@@ -116,19 +124,19 @@ void app_ipc_socket_running(void)
     StartTickCounter(&l_t_msg_wait_10_timer);
 
     Msg_t *msg = get_message(TASK_ID_IPC_SOCKET);
-   
+
     if (msg->id == NO_MSG)
     {
         if ((GetTickCounter(&l_t_msg_wait_500_timer) >= l_t_callback_delay) && (l_t_callback_delay > 0))
         {
             if (l_u8_idle_swich > 0)
             {
-                ipc_notify_message_to_all(CMD_GET_INDICATOR_INFO);
+                ipc_notify_message_to_client(0, CMD_MOD_CARINFOR_INDICATOR);
                 l_u8_idle_swich = 0;
             }
             else
             {
-                ipc_notify_message_to_all(CMD_GET_METER_INFO);
+                ipc_notify_message_to_client(0, CMD_MOD_CARINFOR_METER);
                 l_u8_idle_swich = 1;
             }
 
@@ -136,15 +144,28 @@ void app_ipc_socket_running(void)
         }
         return;
     }
-   
+
     switch (msg->id)
     {
     case MSG_DEVICE_CAR_INFOR_EVENT:
     case MSG_DEVICE_CAN_EVENT:
-        LOG_LEVEL("msg->id=%d param1=%d,param2=%d\r\n", msg->id, msg->param1,msg->param2);
-        ipc_notify_message_to_all(msg->param1);
+        // LOG_LEVEL("msg->id=%d param1=%d,param2=%d\r\n", msg->id, msg->param1,msg->param2);
+        ipc_notify_message_to_client(msg->id, msg->param1);
+        break;
+    case MSG_CAR_SETTING_SAVE:
+        LOG_LEVEL("MSG_CAR_SETTING_SAVE param1=%d,param2=%d \r\n", msg->param1, msg->param2);
+        send_message(TASK_ID_PTL_1, SOC_TO_MCU_MOD_IPC, CMD_MODSYSTEM_SAVE_DATA, msg->param1);
+        break;
+    case MSG_CAR_SET_LIGHT:
+        LOG_LEVEL("MSG_CAR_SET_LIGHT param1=%d,param2=%d \r\n", msg->param1, msg->param2);
+        send_message(TASK_ID_PTL_1, SOC_TO_MCU_MOD_IPC, CMD_MODCAR_SET_LIGHT, msg->param1);
+        break;
+    case MSG_CAR_SET_GEAR_LEVEL:
+        LOG_LEVEL("MSG_CAR_SET_GEAR_LEVEL param1=%d,param2=%d \r\n", msg->param1, msg->param2);
+        send_message(TASK_ID_PTL_1, SOC_TO_MCU_MOD_IPC, CMD_MODCAR_SET_GEAR, msg->param1);
         break;
     }
+
     StartTickCounter(&l_t_msg_wait_500_timer);
 }
 
@@ -157,11 +178,11 @@ void app_ipc_socket_stop_running(void)
     OTMS(TASK_ID_IPC_SOCKET, OTMS_S_INVALID);
 }
 
-void ipc_notify_message_to_all(int cmd_parameter)
+void ipc_notify_message_to_client(uint8_t msg_id, uint8_t cmd_parameter)
 {
     if (CarInforCallback)
     {
-        //LOG_LEVEL("cmd_parameter=%d \r\n",cmd_parameter);
+        LOG_LEVEL("msg_id=%d,cmd_parameter=%d \r\n", msg_id, cmd_parameter);
         CarInforCallback(cmd_parameter);
     }
 }
@@ -178,7 +199,7 @@ void update_push_interval_ms(uint16_t delay_ms)
  * This function processes commands for system, setup, and app modules and sends appropriate responses.
  *
  * PARAMETERS:
- * - frame_type: Type of the frame (M2A_MOD_SYSTEM, A2M_MOD_SYSTEM, M2A_MOD_SETUP).
+ * - frame_type: Type of the frame (MCU_TO_SOC_MOD_SYSTEM, SOC_TO_MCU_MOD_SYSTEM, MCU_TO_SOC_MOD_SETUP).
  * - param1: Command identifier.
  * - param2: Additional parameter for the command.
  * - buff: Pointer to the buffer where the frame should be built.
@@ -189,15 +210,39 @@ void update_push_interval_ms(uint16_t delay_ms)
 bool ipc_socket_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff)
 {
     assert(buff);         // Ensure the buffer is valid
-    uint8_t tmp[8] = {0}; // Temporary buffer for command parameters
+    uint8_t tmp[2] = {0}; // Temporary buffer for command parameters
 
-    // Handle commands for A2M_MOD_SYSTEM frame type
-    if (A2M_MOD_IPC == frame_type)
+    // Handle commands for SOC_TO_MCU_MOD_SYSTEM frame type
+    // LOG_LEVEL("frame_type= %d param1=%d,param2=%d\r\n",frame_type,param1,param2);
+    if (SOC_TO_MCU_MOD_IPC == frame_type)
     {
         switch (param1)
         {
-        case CMD_MODSYSTEM_APP_STATE:
+        case CMD_MODSYSTEM_SAVE_DATA:
+            tmp[0] = param2;
+            ptl_build_frame(SOC_TO_MCU_MOD_IPC, CMD_MODSYSTEM_SAVE_DATA, tmp, 2, buff);
+            LOG_BUFF_LEVEL(buff->buff, buff->size);
             return true;
+        case CMD_MODCAR_SET_LIGHT:
+            tmp[0] = param2;
+            ptl_build_frame(SOC_TO_MCU_MOD_IPC, CMD_MODCAR_SET_LIGHT, tmp, 2, buff);
+            LOG_BUFF_LEVEL(buff->buff, buff->size);
+            return true;
+
+        case CMD_MODCAR_SET_GEAR:
+            tmp[0] = param2;
+            ptl_build_frame(SOC_TO_MCU_MOD_IPC, CMD_MODCAR_SET_GEAR, tmp, 2, buff);
+            LOG_BUFF_LEVEL(buff->buff, buff->size);
+            return true;
+        default:
+            break;
+        }
+    }
+
+    if (MCU_TO_SOC_MOD_IPC == frame_type)
+    {
+        switch (param1)
+        {
         default:
             break;
         }
@@ -218,27 +263,19 @@ bool ipc_socket_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint1
  * RETURNS:
  * - true if the command was processed successfully, false otherwise.
  ******************************************************************************/
-bool ipc_socket_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff)
+bool ipc_socket_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuffer)
 {
-    assert(payload); // Ensure payload is valid
-    assert(ackbuff); // Ensure acknowledgment buffer is valid
-    uint8_t tmp;     // Temporary variable for holding command data
+    assert(payload);   // Ensure payload is valid
+    assert(ackbuffer); // Ensure acknowledgment buffer is valid
+    uint8_t tmp;       // Temporary variable for holding command data
 
-    // Handle received commands for M2A_MOD_SYSTEM frame type
-    // if(M2A_MOD_IPC == payload->frame_type)
-    {
-    }
-
+    // Handle received commands for MCU_TO_SOC_MOD_SYSTEM frame type
     return false; // Command not processed
 }
 
 //__attribute__((visibility("default")))
-int otsm_do_ipc_Command(uint8_t *data, uint8_t length)
+void otsm_do_ipc_Command(uint8_t *data, uint8_t length)
 {
     LOG_LEVEL("ipc_doCommand called with length: %d\n", length);
-    for (int i = 0; i < length; i++)
-    {
-        LOG_LEVEL("data[%d] = %d\n", i, data[i]);
-    }
-    return 0;
+    LOG_BUFF_LEVEL(data, length);
 }

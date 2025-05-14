@@ -20,11 +20,19 @@
 /******************************************************************************
  * INCLUDES
  */
-
-#include "octopus_platform.h"     // Include platform-specific header for hardware platform details
-#include "octopus_log.h"          // Include logging functions for debugging
 #include "octopus_task_manager.h" // Include task manager for scheduling tasks
-
+#include "octopus_log.h"          // Include logging functions for debugging
+#include "octopus_system.h"
+#include "octopus_gpio.h"
+#include "octopus_carinfor.h"
+#include "octopus_ble.h"
+#include "octopus_key.h"
+#include "octopus_update_soc.h"
+#include "octopus_update_mcu.h"
+#include "octopus_ipc.h"
+#include "octopus_bafang.h"
+#include "octopus_uart_ptl_1.h"    // Include UART protocol header
+#include "octopus_uart_ptl_2.h"    // Include UART protocol header
 /*******************************************************************************
  * MACROS
  ******************************************************************************/
@@ -41,6 +49,170 @@
  * CONSTANTS
  ******************************************************************************/
 
+/** Static configuration for all tasks in the OTMS. */
+const static otms_t lat_otms_config[TASK_ID_MAX_NUM] = {
+#if 1
+    [TASK_ID_PTL_1] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = ptl_init_running,
+            [OTMS_S_START] = ptl_start_running,
+            [OTMS_S_ASSERT_RUN] = ptl_assert_running,
+            [OTMS_S_RUNNING] = ptl_running,
+            [OTMS_S_POST_RUN] = ptl_post_running,
+            [OTMS_S_STOP] = ptl_stop_running,
+        },
+    },
+		
+	#ifdef TASK_MANAGER_STATE_MACHINE_PTL2
+    [TASK_ID_PTL_2] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = ptl_2_init_running,
+            [OTMS_S_START] = ptl_2_start_running,
+            [OTMS_S_ASSERT_RUN] = ptl_2_assert_running,
+            [OTMS_S_RUNNING] = ptl_2_running,
+            [OTMS_S_POST_RUN] = ptl_2_post_running,
+            [OTMS_S_STOP] = ptl_2_stop_running,
+        },
+    },
+	#endif
+		
+    [TASK_ID_SYSTEM] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_system_init_running,
+            [OTMS_S_START] = app_system_start_running,
+            [OTMS_S_ASSERT_RUN] = app_system_assert_running,
+            [OTMS_S_RUNNING] = app_system_running,
+            [OTMS_S_POST_RUN] = app_system_post_running,
+            [OTMS_S_STOP] = app_system_stop_running,
+        },
+    },
+   #ifdef TASK_MANAGER_STATE_MACHINE_GPIO
+    [TASK_ID_GPIO] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_gpio_init_running,
+            [OTMS_S_START] = app_gpio_start_running,
+            [OTMS_S_ASSERT_RUN] = app_gpio_assert_running,
+            [OTMS_S_RUNNING] = app_gpio_running,
+            [OTMS_S_POST_RUN] = app_gpio_post_running,
+            [OTMS_S_STOP] = app_gpio_stop_running,
+        },
+    },
+    #endif
+    [TASK_ID_CAR_INFOR] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_carinfo_init_running,
+            [OTMS_S_START] = app_carinfo_start_running,
+            [OTMS_S_ASSERT_RUN] = app_carinfo_assert_running,
+            [OTMS_S_RUNNING] = app_carinfo_running,
+            [OTMS_S_POST_RUN] = app_carinfo_post_running,
+            [OTMS_S_STOP] = app_carinfo_stop_running,
+        },
+    },
+#endif
+
+#ifdef TASK_MANAGER_STATE_MACHINE_BLE
+    [TASK_ID_BLE] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_ble_init_running,
+            [OTMS_S_START] = app_ble_start_running,
+            [OTMS_S_ASSERT_RUN] = app_ble_assert_running,
+            [OTMS_S_RUNNING] = app_ble_running,
+            [OTMS_S_POST_RUN] = app_ble_post_running,
+            [OTMS_S_STOP] = app_ble_stop_running,
+        },
+    },
+#endif
+
+#ifdef TASK_MANAGER_STATE_MACHINE_KEY
+    [TASK_ID_KEY] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_key_init_running,
+            [OTMS_S_START] = app_key_start_running,
+            [OTMS_S_ASSERT_RUN] = app_key_assert_running,
+            [OTMS_S_RUNNING] = app_key_running,
+            [OTMS_S_POST_RUN] = app_key_post_running,
+            [OTMS_S_STOP] = app_key_stop_running,
+        },
+    },
+#endif
+
+#ifdef TASK_MANAGER_STATE_MACHINE_UPDATE
+#ifdef TASK_MANAGER_STATE_MACHINE_MCU
+    [TASK_ID_UPDATE_MCU] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_update_mcu_init_running,
+            [OTMS_S_START] = app_update_mcu_start_running,
+            [OTMS_S_ASSERT_RUN] = app_update_mcu_assert_running,
+            [OTMS_S_RUNNING] = app_update_mcu_running,
+            [OTMS_S_POST_RUN] = app_update_mcu_post_running,
+            [OTMS_S_STOP] = app_update_mcu_stop_running,
+        },
+    },
+#elif defined(TASK_MANAGER_STATE_MACHINE_SOC)
+    [TASK_ID_UPDATE_SOC] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_update_soc_init_running,
+            [OTMS_S_START] = app_update_soc_start_running,
+            [OTMS_S_ASSERT_RUN] = app_update_soc_assert_running,
+            [OTMS_S_RUNNING] = app_update_soc_running,
+            [OTMS_S_POST_RUN] = app_update_soc_post_running,
+            [OTMS_S_STOP] = app_update_soc_stop_running,
+        },
+    },
+#endif
+#endif
+
+#ifdef TASK_MANAGER_STATE_MACHINE_CAN
+ [TASK_ID_CAN] = {
+            .state_limit = OTMS_S_INVALID,
+            .func = {
+                [OTMS_S_INIT] = app_can_init_running,
+                [OTMS_S_START] = app_can_start_running,
+                [OTMS_S_ASSERT_RUN] = app_can_assert_running,
+                [OTMS_S_RUNNING] = app_can_running,
+                [OTMS_S_POST_RUN] = app_can_post_running,
+                [OTMS_S_STOP] = app_can_stop_running,
+            },
+        },
+#endif
+
+#ifdef TASK_MANAGER_STATE_MACHINE_BAFANG
+ [TASK_ID_PTL_BAFANG] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_bafang_ptl_init_running,
+            [OTMS_S_START] = app_bafang_ptl_start_running,
+            [OTMS_S_ASSERT_RUN] = app_bafang_ptl_assert_running,
+            [OTMS_S_RUNNING] = app_bafang_ptl_running,
+            [OTMS_S_POST_RUN] = app_bafang_ptl_post_running,
+            [OTMS_S_STOP] = app_bafang_ptl_stop_running,
+        },
+    },
+#endif
+
+#ifdef TASK_MANAGER_STATE_MACHINE_IPC_SOCKET
+    [TASK_ID_IPC_SOCKET] = {
+        .state_limit = OTMS_S_INVALID,
+        .func = {
+            [OTMS_S_INIT] = app_ipc_socket_init_running,
+            [OTMS_S_START] = app_ipc_socket_start_running,
+            [OTMS_S_ASSERT_RUN] = app_ipc_socket_assert_running,
+            [OTMS_S_RUNNING] = app_ipc_socket_running,
+            [OTMS_S_POST_RUN] = app_ipc_socket_post_running,
+            [OTMS_S_STOP] = app_ipc_socket_stop_running,
+        },
+    },
+#endif
+};
 /* Add any constants here */
 
 /*******************************************************************************
@@ -154,7 +326,7 @@ void otms_set_state(otms_id_t task_id, otms_state_t state)
     }
     else
     {
-        assert(0); // Invalid task ID.
+        MY_ASSERT(0); // Invalid task ID.
     }
 }
 
@@ -175,7 +347,7 @@ otms_state_t otms_get_state(otms_id_t task_id)
     else
     {
         state = OTMS_S_INVALID; // Invalid state.
-        assert(0);              // Invalid task ID.
+        MY_ASSERT(0);           // Invalid task ID.
     }
     return state;
 }

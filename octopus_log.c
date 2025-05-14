@@ -36,6 +36,7 @@
 #define SPECIAL 32 // 0x
 #define LARGE 64   // Use 'ABCDEF' instead of 'abcdef'
 #define is_digit(c) ((c) >= '0' && (c) <= '9')
+#define LOG_DEFAULT_MAX_WIDTH 28
 
 DBG_LOG_LEVEL current_log_level = LOG_LEVEL_DEBUG;
 
@@ -403,6 +404,7 @@ static void native_uart_putc(char *data, uint16_t size)
     HalUartSendBuf(UART0, (uint8_t *)data, size);
 }
 #endif
+
 /**
  * @brief Print a formatted log message.
  * @param format The format string.
@@ -457,9 +459,9 @@ void dbg_log_printf_level(const char *function_name, const char *format, ...)
 
 // Print log header with timestamp, level, function name
 #ifdef PLATFORM_CST_OSAL_RTOS
-    dbg_log_printf("[%s][%27s] ", level_str, function_name);
+    dbg_log_printf("[%s][%28s] ", level_str, function_name);
 #else
-    printf("[%s][%27s] ", level_str, function_name);
+    printf("[%s][%28s] ", level_str, function_name);
 #endif
 
     if (format == NULL || format[0] == '\0')

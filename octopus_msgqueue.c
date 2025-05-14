@@ -151,6 +151,10 @@ Msg_t *get_message(TaskModule_t task_module)
     return &s_msg;  // Return a pointer to the retrieved message
 }
 
+void send_message_adapter(uint16_t task_module, uint16_t id, uint16_t param1, uint16_t param2)
+{
+    send_message((TaskModule_t)task_module,(msgid_t)id,param1,param2);
+}
 /**
  * @brief Clear the message queue for the specified task module.
  *

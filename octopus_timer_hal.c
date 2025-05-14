@@ -16,13 +16,14 @@
 #include "octopus_sif.h"
 #include "octopus_timer_hal.h"
 
-static uint32_t hal_timer_id; 
-
 #define HAL_TIMER_TIMIEOUT_VALUE_US (50)
 //static uint8 timer_TaskID; 
 //static uint8_t s_testCase = 0;
 //static void TimerTest(uint8_t testCase);
+
 #ifdef PLATFORM_CST_OSAL_RTOS
+
+static uint32_t hal_timer_id; 
 void hal_timer_interrupt_callback(uint8_t event);
 #elif defined(PLATFORM_ITE_OPEN_RTOS)
 void hal_timer_interrupt_callback(void *data);
@@ -71,6 +72,8 @@ void hal_timer_interrupt_callback(uint8_t event)
 }
 
 #elif defined(PLATFORM_ITE_OPEN_RTOS)
+
+static uint32_t hal_timer_id; 
 void *hal_timer_irq_init(void *arg)
 {
 #if 1
@@ -135,6 +138,9 @@ void hal_timer_init(uint8_t timer_id)
 
 void hal_timer_interrupt_callback(uint8_t event)
 {	
+	  #ifdef TASK_MANAGER_STATE_MACHINE_SIF
+      SIF_IO_IRQHandler();
+    #endif
 }
 #endif
 

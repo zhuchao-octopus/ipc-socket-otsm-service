@@ -22,6 +22,9 @@
 extern "C" {
 #endif
 
+#define FLASH_PAGE_SIZE         ((uint32_t)0x00000400)   /* FLASH Page Size */
+#define FLASH_USER_START_ADDR   ((uint32_t)0x08006000)   /* Start @ of user Flash area */
+#define FLASH_USER_END_ADDR     ((uint32_t)0x08007000)   /* End @ of user Flash area */
 // Macro for user flash testing. 
 // This could be used for testing purposes or debugging flash operations.
 #define USR_FLASH_TEST  0x0001
@@ -50,7 +53,11 @@ void hal_flash_init(uint8_t task_id);
  *          into the provided buffer. The function will read up to the length
  *          specified by the `len` parameter. The data is stored in `buf`.
  */
-void hal_flash_read_to_buff(uint32_t addr, uint8_t *buf, uint32_t len);
+void hal_flash_read_to_buff(uint32_t startaddr, uint8_t *buffer, uint8_t length);
+void hal_flash_write_buff(uint32_t startaddr, uint8_t *buffer, uint8_t length);
+void hal_eeprom_save(uint32_t startaddr, uint8_t *buffer, uint8_t length);
+void hal_eeprom_read(uint32_t startaddr, uint8_t *buffer, uint8_t length);
+
 
 #ifdef __cplusplus
 }

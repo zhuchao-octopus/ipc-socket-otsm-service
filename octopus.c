@@ -35,7 +35,7 @@
 /*******************************************************************************
  * LOCAL FUNCTIONS DECLARE
  */
-void TaskManagerStateGoRunning();
+void TaskManagerStateGoRunning(void);
 /* Local functions are declared here, but no specific ones are listed */
 
 /*******************************************************************************
@@ -85,15 +85,14 @@ uint8_t GetTaskManagerStateMachineId(void)
 __attribute__((constructor)) void TaskManagerStateMachineInit(void)
 {
     LOG_NONE("---------------------------------------------------------------------------\r\n");
-    LOG_NONE("              _____                                 \r\n");
-    LOG_NONE("______ _________  /_______ ________ ____  __________\r\n");
-    LOG_NONE("_  __ \\_  ___/_  __/_  __ \\___  __ \\_  / / /__  ___/\r\n");
-    LOG_NONE("/ /_/ // /__  / /_  / /_/ /__  /_/ // /_/ / _(__  ) \r\n");
-    LOG_NONE("\\____/ \\___/  \\__/  \\____/ _  .___/ \\__,_/  /____/  \r\n");
-    LOG_NONE("                           /_/                       \r\n");
-    LOG_NONE("  Embedded Real-Time Task Scheduler + FSM Engine\r\n");
+    LOG_NONE("               _____                                 \r\n");
+    LOG_NONE(" ______ _________  /_______ ________ ____  __________\r\n");
+    LOG_NONE(" _  __ \\_  ___/_  __/_  __ \\___  __ \\_  / / /__  ___/\r\n");
+    LOG_NONE(" / /_/ // /__  / /_  / /_/ /__  /_/ // /_/ / _(__  ) \r\n");
+    LOG_NONE(" \\____/ \\___/  \\__/  \\____/ _  .___/ \\__,_/  /____/  \r\n");
+    LOG_NONE("                            /_/                       \r\n");
+    LOG_NONE(" Embedded Real-Time Task Scheduler + FSM Engine\r\n");
 
-    LOG_NONE("---------------------------------------------------------------------------\r\n");
     LOG_NONE(" Firmware  : v1.0.0\r\n");
     LOG_NONE(" Compiled  : %s %s\r\n", __DATE__, __TIME__);
     LOG_NONE(" Author    : Octopus Dev Team\r\n");
@@ -115,7 +114,7 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
     hal_timer_init(5); // Initialize timer with interval of 5 (could be milliseconds)
 #endif
     hal_flash_init(0);
-    hal_com_uart_init(0); // Initialize UART communication protocol
+    hal_uart_init(0); // Initialize UART communication protocol
 
     /////////////////////////////////////////////////////////////////////////////////////////////////////
     // Initialize the necessary modules
@@ -151,6 +150,7 @@ __attribute__((constructor)) void TaskManagerStateMachineInit(void)
 #endif
     /////////////////////////////////////////////////////////////////////////////////////////////////////
     //LOG_NONE("#####################################BOOT COMPLETE#####################################\r\n");
+	 LOG_NONE("---------------------------------------------------------------------------\r\n");
 }
 
 __attribute__((destructor)) void exit_cleanup()
@@ -160,7 +160,9 @@ __attribute__((destructor)) void exit_cleanup()
     TaskManagerStateStopRunning();
 #endif
 }
-
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #ifdef PLATFORM_CST_OSAL_RTOS
 /**
  * @brief Handles events in the Task Manager State Machine for CST OSAL RTOS.
@@ -207,7 +209,7 @@ uint16 TaskManagerStateEventLoop(uint8 task_id, uint16 events)
 
     return 0; // Return 0 if no events were handled
 }
-void TaskManagerStateGoRunning()
+void TaskManagerStateGoRunning(void)
 {
 }
 #elif defined(PLATFORM_ITE_OPEN_RTOS)
@@ -252,7 +254,7 @@ void *TaskManagerStateEventLoop(void *arg)
     LOG_LEVEL("task manager state machine event stoped\r\n"); // Log unhandled events
 }
 
-void TaskManagerStateGoRunning()
+void TaskManagerStateGoRunning(void)
 {
     // LOG_LEVEL("task manager state machine thread enter\n");
     pthread_attr_init(&thread_attr);                                                       // Initialize thread attributes
@@ -278,7 +280,16 @@ void TaskManagerStateStopRunning()
     stop_thread = true; // 设置标志位为 true，通知线程停止
     LOG_LEVEL("task manager state machine thread stopped!\n");
 }
-
 #else
+
+void TaskManagerStateEventLoop(void *arg)
+{
+  task_manager_run();      
+}
+
+void TaskManagerStateGoRunning(void)
+{
+	
+}
 
 #endif

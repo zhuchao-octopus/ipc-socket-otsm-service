@@ -17,8 +17,8 @@
  * @date     2024-12-12
  *******************************************************************************/
 
-#ifndef __OCTOPUS_TASK_MANAGER_PTL_H__
-#define __OCTOPUS_TASK_MANAGER_PTL_H__
+#ifndef __OCTOPUS_TASK_MANAGER_PTL_1_H__
+#define __OCTOPUS_TASK_MANAGER_PTL_1_H__
 /*******************************************************************************
  * INCLUDES
  */
@@ -43,7 +43,7 @@ extern "C"
 #define PTL_FRAME_MIN_SIZE 7    ///< Minimum size of the frame
 #define PTL_FRAME_MAX_SIZE 255  ///< Maximum size of the frame
 #define PTL_FRAME_DATA_START 5  ///< Start index of the data in the frame
-#define PTL_HEADER 0xFA         ///< Frame header identifier
+                                // #define PTL_HEADER 0xFA         ///< Frame header identifier
 
     /*******************************************************************************
      * TYPEDEFS
@@ -64,9 +64,9 @@ extern "C"
      */
     typedef enum
     {
-        M2A_PTL_HEADER = 0x55, ///< MCU -> APP frame header
-        A2M_PTL_HEADER = 0xAA, ///< APP -> MCU frame header
-        DBG_PTL_HEADER = 0xFF  ///< for debug
+        MCU_TO_SOC_PTL_HEADER = 0x55, ///< MCU -> APP frame header
+        SOC_TO_MCU_PTL_HEADER = 0xAA, ///< APP -> MCU frame header
+        DBG_PTL_HEADER = 0xFF         ///< for debug
     } ptl_frame_header_t;
 
     /**
@@ -74,35 +74,27 @@ extern "C"
      */
     typedef enum
     {
-        /* MCU -> APP(SOC) module IDs */
-        M2A_MOD_SYSTEM = 0x00,    ///< System initialization
-        M2A_MOD_UPDATE = 0x01,    ///< System update
-        M2A_MOD_TRANSFER = 0x02,  ///< Data transfer
-        M2A_MOD_METER = 0x03,     ///< Meter data
-        M2A_MOD_INDICATOR = 0x04, ///< Indicator data
-        M2A_MOD_DRIV_INFO = 0x05, ///< Driving information
-        M2A_MOD_SETUP = 0x06,     ///< Settings
-        M2A_MOD_KEY = 0x07,       ///< KEY
+        /* MCU -> SOC module IDs */
+        MCU_TO_SOC_MOD_SYSTEM = 0x00,   ///< System initialization
+        MCU_TO_SOC_MOD_UPDATE = 0x01,   ///< System update
+        MCU_TO_SOC_MOD_TRANSFER = 0x02, ///< Data transfer
+        MCU_TO_SOC_MOD_CARINFOR = 0x03, ///< IPC carinfor
+        MCU_TO_SOC_MOD_SETUP = 0x04,    ///< Settings
+        MCU_TO_SOC_MOD_KEY = 0x05,      ///< KEY
+        MCU_TO_SOC_MOD_CAN = 0x06,      ///< CAN
+        MCU_TO_SOC_MOD_IPC = 0x07,      ///< IPC socket
 
-        /* APP(SOC) -> MCU module IDs */
-        A2M_MOD_SYSTEM = 0x80,    ///< System initialization
-        A2M_MOD_UPDATE = 0x81,    ///< System update
-        A2M_MOD_TRANSFER = 0x82,  ///< Data transfer
-        A2M_MOD_METER = 0x83,     ///< Meter data
-        A2M_MOD_INDICATOR = 0x84, ///< Indicator data
-        A2M_MOD_DRIV_INFO = 0x85, ///< Driving information
-        A2M_MOD_SETUP = 0x86,     ///< Settings
-        A2M_MOD_KEY = 0x87,       ///< KEY
-        A2M_MOD_IPC = 0x88,       ///< IPC socket
+        /* SOC -> MCU module IDs */
+        SOC_TO_MCU_MOD_SYSTEM = 0x80,   ///< System initialization
+        SOC_TO_MCU_MOD_UPDATE = 0x81,   ///< System update
+        SOC_TO_MCU_MOD_TRANSFER = 0x82, ///< Data transfer
+        SOC_TO_MCU_MOD_CARINFOR = 0x83, ///< IPC carinfor
+        SOC_TO_MCU_MOD_SETUP = 0x84,    ///< Settings
+        SOC_TO_MCU_MOD_KEY = 0x85,      ///< KEY
+        SOC_TO_MCU_MOD_CAN = 0x86,      ///< CAN
+        SOC_TO_MCU_MOD_IPC = 0x87,      ///< IPC socket
 
-        P2M_MOD_DEBUG = 0xF0, ///< DEBUG
     } ptl_frame_type_t;
-
-        /* Range definitions for validity checks */
-        #define M2A_MOD_START M2A_MOD_SYSTEM
-        #define M2A_MOD_END M2A_MOD_KEY
-        #define A2M_MOD_START A2M_MOD_SYSTEM
-        #define A2M_MOD_END A2M_MOD_KEY
 
     /**
      * @brief Enumeration for commands within each module.
@@ -115,6 +107,7 @@ extern "C"
         CMD_MODSYSTEM_APP_STATE = 0x02, ///< Application state
         CMD_MODSYSTEM_POWER_ON = 0x03,  ///< Power on
         CMD_MODSYSTEM_POWER_OFF = 0x04, ///< Power off
+        CMD_MODSYSTEM_SAVE_DATA = 0x05, ///< Power off
 
         /* MOD_UPDATE commands */
         CMD_MODUPDATE_CHECK_FW_STATE = 0x06,  ///< Check firmware state
@@ -134,20 +127,26 @@ extern "C"
         CMD_MODMETER_SOC = 0x10,          ///< State of charge (SOC)
 
         /* MOD_INDICATOR commands */
-        CMD_MODINDICATOR_INDICATOR = 0x11,  ///< Indicator status
-        CMD_MODINDICATOR_ERROR_INFO = 0x12, ///< Error information
+        CMD_MOD_CARINFOR_INDICATOR = 0x11, ///< Indicator status
+        CMD_MOD_CARINFOR_METER = 0x12,     ///< Indicator status
+        CMD_MOD_CARINFOR_BATTERY = 0x13,
+        CMD_MOD_CARINFOR_ERROR = 0x14, ///< Error information
 
         /* MOD_DRIV_INFO commands */
-        CMD_MODDRIVINFO_ODO = 0x14,             ///< Odometer data
-        CMD_MODDRIVINFO_DRIV_DATA = 0x15,       ///< Driving data
-        CMD_MODDRIVINFO_GEAR = 0x16,            ///< Gear information
-        CMD_MODDRIVINFO_NAVI = 0x17,            ///< Navigation data
-        CMD_MODDRIVINFO_DRIV_DATA_CLEAR = 0x18, ///< Clear driving data
+        CMD_MODDRIVINFO_ODO = 0x15,             ///< Odometer data
+        CMD_MODDRIVINFO_DRIV_DATA = 0x16,       ///< Driving data
+        CMD_MODDRIVINFO_GEAR = 0x17,            ///< Gear information
+        CMD_MODDRIVINFO_NAVI = 0x18,            ///< Navigation data
+        CMD_MODDRIVINFO_DRIV_DATA_CLEAR = 0x19, ///< Clear driving data
 
         /* MOD_SETUP commands */
-        CMD_MODSETUP_UPDATE_TIME = 0x19, ///< Update time
-        CMD_MODSETUP_SET_TIME = 0x1A,    ///< Set time
-        CMD_MODSETUP_KEY = 0x1B          ///< Key input
+        CMD_MODSETUP_UPDATE_TIME = 0x1A, ///< Update time
+        CMD_MODSETUP_SET_TIME = 0x1B,    ///< Set time
+        CMD_MODSETUP_KEY = 0x1C,         ///< Key input
+
+        CMD_MODCAR_SET_LIGHT = 0x1D, ///< set car light
+        CMD_MODCAR_SET_GEAR = 0x1E,
+
     } ptl_frame_cmd_t;
 
     /**
@@ -282,12 +281,18 @@ extern "C"
      * @param len The length of the data.
      * @return The calculated checksum.
      */
-    uint8_t ptl_get_checksum(uint8_t *data, uint8_t len);
+    uint8_t ptl_get_checksum(uint8_t *data, uint8_t length);
 
     void ptl_help(void);
 
 #ifdef __cplusplus
 }
 #endif
+
+/* Range definitions for validity checks */
+#define MCU_TO_SOC_MOD_START MCU_TO_SOC_MOD_SYSTEM
+#define MCU_TO_SOC_MOD_END MCU_TO_SOC_MOD_KEY
+#define SOC_TO_MCU_MOD_START SOC_TO_MCU_MOD_SYSTEM
+#define SOC_TO_MCU_MOD_END SOC_TO_MCU_MOD_KEY
 
 #endif /* __OCTOPUS_TASK_MANAGER_PTL_H__ */

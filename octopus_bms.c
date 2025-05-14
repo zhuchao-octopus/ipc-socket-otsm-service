@@ -189,7 +189,7 @@ void BMS_Delay_us(uint32_t us) {
 
 uint8_t BMS_ReadData(uint8_t* data, uint8_t maxlen)
 {
-	assert(data);
+	MY_ASSERT(data);
 	if (!BMS_has_inited)
 	{
 		return 0;
@@ -413,8 +413,8 @@ void BMS_Receive_Data_Handle(void)
 #ifdef BMS_SEND_HANDLER
 uint8_t BMS_SendData_Sync(uint8_t* data, uint8_t len)
 {
-	assert(data);
-	assert(len);
+	MY_ASSERT(data);
+	MY_ASSERT(len);
 
 	if (!BMS_has_inited)
 	{
@@ -465,9 +465,9 @@ uint8_t BMS_SendData(uint8_t* data, uint8_t len)
 	}
 	LOG_LEVEL("\r\n");
 	#endif
-	assert(data);
-	assert(len);
-	assert(len <= BMS_SEND_DATA_MAX_NUM);
+	MY_ASSERT(data);
+	MY_ASSERT(len);
+	MY_ASSERT(len <= BMS_SEND_DATA_MAX_NUM);
 	if (!BMS_has_inited)
 	{
 		return 0;

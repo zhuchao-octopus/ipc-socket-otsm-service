@@ -51,7 +51,7 @@ extern "C" {
 #define OCTOPUS_KEY_12 12
 #define OCTOPUS_KEY_13 13
 #define OCTOPUS_KEY_14 14
-
+#define OCTOPUS_KEY_POWER 20
 /*******************************************************************************
  * TYPEDEFS
  * The following defines key codes representing different actions or states of the keys.

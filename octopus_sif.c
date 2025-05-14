@@ -177,8 +177,11 @@ bool SIF_Is_Idle(void)
 		return 0;
 }
 
-void SIF_Delay_us(uint32_t us) {
-  DELAY_US(us);  
+void SIF_Delay_us(uint32_t delay_us) {
+  //DELAY_US(us);  
+	uint32_t start = system_timer_tick_50us;
+	uint32_t us = delay_us / 50;
+  while ((system_timer_tick_50us - start) < us);
 }
 
 
@@ -387,7 +390,7 @@ void SIF_Receive_Data_Handle(void)
 
 uint8_t SIF_ReadData(uint8_t* data, uint8_t maxlen)
 {
-	assert(data);
+	MY_ASSERT(data);
 	if (!SIF_has_inited)
 	{
 		return 0;
@@ -408,8 +411,8 @@ uint8_t SIF_ReadData(uint8_t* data, uint8_t maxlen)
 
 uint8_t SIF_SendData_Sync(uint8_t* data, uint8_t len)
 {
-	assert(data);
-	assert(len);
+	MY_ASSERT(data);
+	MY_ASSERT(len);
 
 	if (!SIF_has_inited)
 	{
@@ -460,9 +463,9 @@ uint8_t SIF_SendData(uint8_t* data, uint8_t len)
 	}
 	LOG_LEVEL("\r\n");
 	#endif
-	assert(data);
-	assert(len);
-	assert(len <= SIF_SEND_DATA_MAX_NUM);
+	MY_ASSERT(data);
+	MY_ASSERT(len);
+	MY_ASSERT(len <= SIF_SEND_DATA_MAX_NUM);
 	if (!SIF_has_inited)
 	{
 		return 0;

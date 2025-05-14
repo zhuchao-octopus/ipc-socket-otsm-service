@@ -113,8 +113,8 @@ extern "C" {
 #define GPIO_PIN_SIF_SET_HIGH()             // Set GPIO_SIF_S_PIN to High
 #define GPIO_PIN_READ_SIF()                 (0x00) // Read the state of SIF_R_PIN
 
-#else
-
+#elif defined(PLATFORM_STM32_RTOS)
+typedef GPIO_TypeDef GPIO_GROUP;
 // Default GPIO pin definitions for unsupported platforms
 #define GPIO_ACC_SOC_PIN                    (0x00) /**< ACC_SOC pin */
 #define GPIO_ACC_PIN                        (0x00) /**< ACC pin */
@@ -124,13 +124,18 @@ extern "C" {
 #define GPIO_YZD_PIN                        (0x00) /**< YZD pin */
 #define GPIO_SKD_PIN                        (0x00) /**< SKD pin */
 
+#define GPIO_POWER_GROUP GPIOA
+#define GPIO_POWER_PIN GPIO_Pin_12
+
+#define GPIO_POWER_F113_GROUP GPIOB
+#define GPIO_POWER_F113_PIN GPIO_Pin_4
 // Macros for controlling GPIO pin states (Low/High)
 #define GPIO_ACC_SOC_LOW()                  // Set GPIO_ACC_SOC_PIN to Low
 #define GPIO_ACC_SOC_HIGH()                 // Set GPIO_ACC_SOC_PIN to High
 
 // Macros for writing to and reading from GPIO pins
-#define GPIO_PIN_WRITE(pin)                 (0x00) // Write to the specified GPIO pin
-#define GPIO_PIN_READ(pin)                  (0x00) // Read the state of the specified GPIO pin
+#define GPIO_PIN_WRITE(GPIOx,pin,bit)        (GPIO_WriteBit(GPIOx,pin,bit)) // Write to the specified GPIO pin
+#define GPIO_PIN_READ(GPIOx,pin)             (GPIO_ReadInputDataBit(GPIOx,pin)) // Read the state of the specified GPIO pin
 
 // Macros for reading GPIO states for various pins
 #define GPIO_PIN_READ_ACC()                 (0x00) // Read the state of ACC_PIN
@@ -160,6 +165,9 @@ void hal_gpio_init(uint8_t task_id);
 
 // Function to get the GPIO key mask code based on the pin number
 uint8_t hal_get_gpio_key_mask_code(uint8_t pin);
+
+bool IsPowerOn(void);
+void power_on_off(bool onoff);
 
 #ifdef __cplusplus
 }

@@ -106,7 +106,7 @@ static void mcu_reboot_state_proc(void); // Process reboot state machine
  * @brief Initialize the MCU update module and register communication handlers.
  */
 void app_update_mcu_init_running(void) {
-    ptl_register_module(M2A_MOD_UPDATE, update_module_send_handler, update_module_receive_handler); // Register handlers for module communication
+    ptl_register_module(MCU_TO_SOC_MOD_UPDATE, update_module_send_handler, update_module_receive_handler); // Register handlers for module communication
     OTMS(TASK_ID_UPDATE_MCU, OTMS_S_INVALID); // Set the task state to invalid (not running)
 }
 
@@ -121,7 +121,7 @@ void app_update_mcu_start_running(void) {
  * @brief Assert the MCU update task to a running state, ensuring it is active.
  */
 void app_update_mcu_assert_running(void) {
-    ptl_reqest_running(M2A_MOD_UPDATE); // Request module to be active
+    ptl_reqest_running(MCU_TO_SOC_MOD_UPDATE); // Request module to be active
     OTMS(TASK_ID_UPDATE_MCU, OTMS_S_RUNNING); // Set task state to running
 }
 
@@ -136,7 +136,7 @@ void app_update_mcu_running(void) {
  * @brief Post-task actions after the MCU update task completes.
  */
 void app_update_mcu_post_running(void) {
-    ptl_release_running(M2A_MOD_UPDATE); // Release the active module
+    ptl_release_running(MCU_TO_SOC_MOD_UPDATE); // Release the active module
     OTMS(TASK_ID_UPDATE_MCU, OTMS_S_ASSERT_RUN); // Reset task state to assert run
 }
 
@@ -159,8 +159,8 @@ bool update_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, ui
     
     // The following commented print statement would log the function execution for debugging purposes:
     // PRINT("update_module_send_handler  MOD %02x  CMD %02x PRARM %04x\n", module, cmd, param);  
-    // Check if the module type is M2A_MOD_UPDATE (which indicates an update operation).
-    if (M2A_MOD_UPDATE == frame_type)
+    // Check if the module type is MCU_TO_SOC_MOD_UPDATE (which indicates an update operation).
+    if (MCU_TO_SOC_MOD_UPDATE == frame_type)
     {
         // Handle the specific update request based on 'param1'.
         switch (param1)
@@ -168,8 +168,8 @@ bool update_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, ui
             case CMD_MODUPDATE_UPDATE_FW_STATE:  // Case for firmware state update
             {
                 tmp[0] = 0x00;  // Set the first byte of 'tmp' to 0x00, indicating that the MCU is running normally.
-                // Build the frame with the update information (M2A_MOD_UPDATE, firmware state update command, and the state data).
-                ptl_build_frame(M2A_MOD_UPDATE, CMD_MODUPDATE_UPDATE_FW_STATE, tmp, 1, buff);
+                // Build the frame with the update information (MCU_TO_SOC_MOD_UPDATE, firmware state update command, and the state data).
+                ptl_build_frame(MCU_TO_SOC_MOD_UPDATE, CMD_MODUPDATE_UPDATE_FW_STATE, tmp, 1, buff);
                 return true;    // Successfully processed the update request.
             }
             default:
@@ -188,8 +188,8 @@ bool update_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t
     
     uint8_t tmp = 0;  // Temporary variable to hold status or response data.
     
-    // Check if the frame type of the received payload is A2M_MOD_UPDATE (indicating it's an update operation).
-    if (A2M_MOD_UPDATE == payload->frame_type)
+    // Check if the frame type of the received payload is SOC_TO_MCU_MOD_UPDATE (indicating it's an update operation).
+    if (SOC_TO_MCU_MOD_UPDATE == payload->frame_type)
     {
         // The following commented print statement would log the frame details for debugging:
         // LOG_LEVEL("MOD %02x CMD %02x pm1 %02x pm2 %02x\r\n", payload->module, payload->cmd, payload->data[0], payload->data[1]);
@@ -202,7 +202,7 @@ bool update_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t
                 LOG_LEVEL("CMD_MODUPDATE_CHECK_FW_STATE\r\n");
                 tmp = 0x00; // Set tmp to 0x00 to indicate that the MCU is running normally.
                 // Build a frame with the response (firmware state check) and send it back via 'ackbuff'.
-                ptl_build_frame(M2A_MOD_UPDATE, CMD_MODUPDATE_CHECK_FW_STATE, &tmp, 1, ackbuff);
+                ptl_build_frame(MCU_TO_SOC_MOD_UPDATE, CMD_MODUPDATE_CHECK_FW_STATE, &tmp, 1, ackbuff);
                 return true;  // Successfully handled the request.
             }
             case CMD_MODUPDATE_UPDATE_FW_STATE:  // Command for updating the firmware state.
@@ -221,7 +221,7 @@ bool update_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t
 
                 tmp = 0x01;  // Indicate success (entering firmware update mode).
                 // Build a response frame and send it back via 'ackbuff'.
-                ptl_build_frame(M2A_MOD_UPDATE, CMD_MODUPDATE_ENTER_FW_UPDATE, &tmp, 1, ackbuff);
+                ptl_build_frame(MCU_TO_SOC_MOD_UPDATE, CMD_MODUPDATE_ENTER_FW_UPDATE, &tmp, 1, ackbuff);
                 return true;  // Successfully entered firmware update mode.
             }
             case CMD_MODUPDATE_EXIT_FW_UPDATE:   // Command to exit firmware update mode.
@@ -229,7 +229,7 @@ bool update_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t
                 LOG_LEVEL("CMD_MODUPDATE_EXIT_FW_UPDATE\r\n");
                 tmp = 0x00; // Indicate successful exit from update mode.
                 // Build a response frame and send it back via 'ackbuff'.
-                ptl_build_frame(M2A_MOD_UPDATE, CMD_MODUPDATE_EXIT_FW_UPDATE, &tmp, 1, ackbuff);
+                ptl_build_frame(MCU_TO_SOC_MOD_UPDATE, CMD_MODUPDATE_EXIT_FW_UPDATE, &tmp, 1, ackbuff);
                 return true;  // Successfully exited update mode.
             }
             case CMD_MODUPDATE_REBOOT:           // Command for rebooting the system.
@@ -249,7 +249,7 @@ bool update_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t
 
                 tmp = 0x01; // Acknowledge the success of the reboot request.
                 // Build a response frame and send it back via 'ackbuff'.
-                ptl_build_frame(M2A_MOD_UPDATE, CMD_MODUPDATE_REBOOT, &tmp, 1, ackbuff);
+                ptl_build_frame(MCU_TO_SOC_MOD_UPDATE, CMD_MODUPDATE_REBOOT, &tmp, 1, ackbuff);
                 return true;  // Successfully processed reboot request.
             }
             default:

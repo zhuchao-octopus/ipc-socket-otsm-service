@@ -25,7 +25,7 @@
  */
  #include "octopus_platform.h"       // Platform-specific configurations and settings
  #include "octopus_task_manager.h"   // Task management functions and definitions
- #include "octopus_uart_ptl.h"       // UART protocol handling
+ #include "octopus_uart_ptl_1.h"       // UART protocol handling
  #include "octopus_tickcounter.h"    // Timer and tick counter management
  #include "octopus_msgqueue.h" // Message queue for inter-task communication
  #include "octopus_log.h"            // Octopus-specific logging utilities
@@ -90,6 +90,9 @@ void *TaskManagerStateEventLoop(void *arg);
 
 void TaskManagerStateStopRunning();
 
+#else
+ void TaskManagerStateMachineInit(void);
+ void TaskManagerStateEventLoop(void *arg);
 #endif
 
 #ifdef __cplusplus

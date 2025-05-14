@@ -32,13 +32,22 @@ void PrintfBuffHex(const char *fun, int line, char *str, uint8_t *dat, int len)
 	///LOG_("\r\n");
 }
 
-void FlashReadToBuff(uint32_t addr, uint8_t *buf, uint32_t len)
+void FlashReadToBuff(uint32_t addr, uint8_t *buf, uint32_t length)
 {
-	 hal_flash_read_to_buff(addr, buf, len);
+	 hal_flash_read_to_buff(addr, buf, length);
 }
 
-void FlashWriteBuffTo(uint32_t addr, uint8_t *buf, uint32_t len)
+void FlashWriteBuffTo(uint32_t addr, uint8_t *buf, uint32_t length)
 {
-
+	hal_flash_write_buff(addr,buf,length);
 }
 
+void E2ROMReadToBuff(uint32_t addr, uint8_t *buf, uint32_t length)
+{
+	 hal_eeprom_read(addr, buf, length);
+}
+
+void E2ROMWriteBuffTo(uint32_t addr, uint8_t *buf, uint32_t length)
+{
+	hal_eeprom_save(addr,buf,length);
+}

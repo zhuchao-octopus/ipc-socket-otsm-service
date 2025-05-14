@@ -31,7 +31,8 @@ extern void FlashReadToBuff(uint32_t addr, uint8_t *buf, uint32_t len);
 /**< Reads data from Flash memory into a buffer. */
 extern void FlashWriteBuffTo(uint32_t addr, uint8_t *buf, uint32_t len);  
 /**< Writes data from a buffer to Flash memory. */
-
+extern void E2ROMReadToBuff(uint32_t addr, uint8_t *buf, uint32_t length);
+extern void E2ROMWriteBuffTo(uint32_t addr, uint8_t *buf, uint32_t length);
 #ifdef __cplusplus
 }
 #endif

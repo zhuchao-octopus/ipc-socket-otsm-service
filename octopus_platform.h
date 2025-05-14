@@ -50,9 +50,31 @@
 // #define PLATFORM_ITE_OPEN_RTOS   // Enable ITE platform with OPEN RTOS
 // #define PLATFORM_CST_OSAL_RTOS   // Uncomment to use CST platform with OSAL RTOS
 // #define PLATFORM_X86_WIND_RTOS   // Uncomment to use XB6 platform with WIND RTOS
+//#define PLATFORM_STM32_RTOS
 #define PLATFORM_LINUX_RISC         // X86 ARM linux
 
-/*******************************************************************************
+/***********************************************************************************
+ * @brief Task Manager state machine modes.
+ */
+//#define TASK_MANAGER_STATE_MACHINE_MCU 1 /**< Main control mode. */
+#define TASK_MANAGER_STATE_MACHINE_SOC 1 /**< (Reserved) SOC mode. */
+
+///////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////
+
+//#define TASK_MANAGER_STATE_MACHINE_SIF 1 /**< Secondary interface mode. */
+//#define TASK_MANAGER_STATE_MACHINE_BLE 1 
+//#define TASK_MANAGER_STATE_MACHINE_BMS 1 
+//#define TASK_MANAGER_STATE_MACHINE_UPDATE 1 
+//#define TASK_MANAGER_STATE_MACHINE_KEY 1 
+//#define TASK_MANAGER_STATE_MACHINE_GPIO 1 
+//#define TASK_MANAGER_STATE_MACHINE_CAN 1 
+
+#define TASK_MANAGER_STATE_MACHINE_IPC_SOCKET 1 
+
+///////////////////////////////////////////////////////////////////////////////////
+//#define USE_EEROM_FOR_DATA_SAVING
+/***********************************************************************************
  * INCLUDE FILES
  * Include necessary standard libraries and platform-specific headers.
  ******************************************************************************/
@@ -65,6 +87,10 @@
 #include <string.h>  // String manipulation functions
 #include <assert.h>  // Debugging support for assertions
 #include <time.h>    // Time manipulation functions
+#include <stdlib.h>  // for rand()
+
+#include "octopus_log.h"       			// Include logging functions for debugging
+#include "octopus_uart_ptl_1.h"    // Include UART protocol header
 
 #ifdef PLATFORM_ITE_OPEN_RTOS
 #include <sys/ioctl.h>         // System I/O control definitions
@@ -79,9 +105,7 @@
 #include "openrtos/FreeRTOS.h" // FreeRTOS kernel for real-time tasks
 #include "openrtos/queue.h"    // FreeRTOS queue handling
 #include <unistd.h>            // POSIX API for file and process handling
-#endif
-
-#ifdef PLATFORM_CST_OSAL_RTOS
+#elif defined(PLATFORM_CST_OSAL_RTOS)
 #include "OSAL.h"              // OS abstraction layer
 #include "OSAL_PwrMgr.h"       // OS power management utilities
 #include "OSAL_Memory.h"       // OS memory management functions
@@ -111,12 +135,13 @@
 #include "rom_sym_def.h"       // ROM symbol definitions
 #include "sdk_config.h"        // SDK configuration file
 #include "types.h"             // Basic type definitions
-#endif
-
-#ifdef PLATFORM_LINUX_RISC
+#elif defined(PLATFORM_LINUX_RISC)
 #include <pthread.h>
 #include <unistd.h>
 #include "../HAL/octopus_serialport_c.h"
+
+#else 
+#include "../src/native_devices.h"
 #endif
 
 #ifdef __cplusplus
@@ -160,8 +185,9 @@ extern "C"
 }) // Return zero for unsupported platforms
 
 #else
-#define DELAY_US(us)            // Define empty macro for unsupported platforms
-#define GET_SYSTEM_TICK_COUNT 0 // Return zero for unsupported platforms
+extern uint32_t system_tick_ms;
+extern volatile uint32_t system_timer_tick_50us;
+#define GET_SYSTEM_TICK_COUNT system_tick_ms // Return zero for unsupported platforms
 #endif
 
 /*******************************************************************************
@@ -206,10 +232,13 @@ extern "C"
  ******************************************************************************/
 #define PI_FLOAT (3.14159f) // Value of �� as a floating-point constant
 
-    /*******************************************************************************
-     * FUNCTION DECLARATIONS
-     * Declare any external functions used in this file.
-     ******************************************************************************/
+/*******************************************************************************
+* FUNCTION DECLARATIONS
+* Declare any external functions used in this file.
+******************************************************************************/
+
+#define MY_ASSERT(expr) do { if (!(expr)) { LOG_LEVEL("ASSERT FAILED: %s, FILE: %s, LINE: %d\n", #expr, __FILE__, __LINE__); while (1); } } while (0)
+
 
 #ifdef __cplusplus
 }

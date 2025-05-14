@@ -23,8 +23,8 @@
 #include "octopus_platform.h"     // Include platform-specific header for hardware platform details
 #include "octopus_log.h"          // Include logging functions for debugging
 #include "octopus_task_manager.h" // Include task manager for scheduling tasks
-
-#include "octopus_uart_ptl.h"    // Include UART protocol header
+#include "octopus_system.h"
+#include "octopus_uart_ptl_1.h"  // Include UART protocol header
 #include "octopus_uart_hal.h"    // Include UART hardware abstraction layer header
 #include "octopus_tickcounter.h" // Include timer utility functions
 #include "octopus_msgqueue.h"    // Include message queue header for task communication
@@ -32,8 +32,8 @@
 /*******************************************************************************
  * DEBUG SWITCH MACROS
  */
-#define TEST_LOG_DEBUG_PTL_RX_FRAME  // Enable debugging for receiving frames
-//#define TEST_LOG_DEBUG_PTL_TX_FRAME // Enable debugging for transmitting frames
+#define TEST_LOG_DEBUG_PTL_RX_FRAME // Enable debugging for receiving frames
+#define TEST_LOG_DEBUG_PTL_TX_FRAME // Enable debugging for transmitting frames
 
 /*******************************************************************************
  * MACROS
@@ -73,15 +73,15 @@ typedef struct
  */
 
 // Declare function prototypes for various tasks and processing functions
-void ptl_init(void);                                    // Initialize the Octopus protocol
-void ptl_remove_none_header_data(ptl_proc_buff_t *buf); // Remove data that is not part of the header
-void ptl_find_valid_frame(ptl_proc_buff_t *buf);        // Find a valid frame from the received data
-void ptl_proc_valid_frame(uint8_t *data, uint16_t len); // Process the valid frame
-void ptl_error_detect(void);                            // Detect communication errors
+void ptl_init(void);                                         // Initialize the Octopus protocol
+void ptl_remove_none_header_data(ptl_proc_buff_t *buffer);   // Remove data that is not part of the header
+void ptl_find_valid_frame(ptl_proc_buff_t *buffer);          // Find a valid frame from the received data
+void ptl_proc_valid_frame(uint8_t *buffer, uint16_t length); // Process the valid frame
+void ptl_error_detect(void);                                 // Detect communication errors
 
-void ptl_tx_event_message_handler(void); // Handle the transmission event message
-void ptl_rx_event_message_handler(void);
-void ptl_hal_tx(uint8_t *data, uint16_t length);
+void ptl_1_tx_event_handler(void); // Handle the transmission event message
+void ptl_1_rx_event_handler(void);
+void ptl_1_hal_tx(uint8_t *buffer, uint16_t length);
 bool ptl_is_sleep_enable(void);                             // Check if sleep mode is enabled
 module_info_t *ptl_get_module(ptl_frame_type_t frame_type); // Get module information by frame type
 /*******************************************************************************
@@ -112,17 +112,17 @@ static uint8_t l_u8_next_empty_module = 0;                    // Index for the n
 void ptl_help(void)
 {
     /// uint8_t tmp[2] = {0};
-    LOG_LEVEL("app ptl help guide\r\n");
+    /// LOG_LEVEL("app ptl help guide\r\n");
 
     /// tmp[0] = 0x00;
     /// ptl_build_frame(P2M_MOD_DEBUG, CMD_MODSYSTEM_HANDSHAKE, tmp, 2, &l_t_tx_proc_buf);
     /// LOG_BUFF_LEVEL(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
-    /// tmp[0] = 0x01;
-    /// ptl_build_frame(P2M_MOD_DEBUG, CMD_MODSYSTEM_HANDSHAKE, tmp, 2, &l_t_tx_proc_buf);
-    /// LOG_BUFF_LEVEL(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
-    /// tmp[0] = 0x02;
-    /// ptl_build_frame(P2M_MOD_DEBUG, CMD_MODSYSTEM_HANDSHAKE, tmp, 2, &l_t_tx_proc_buf);
-    /// LOG_BUFF_LEVEL(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
+    ///  tmp[0] = 0x01;
+    ///  ptl_build_frame(P2M_MOD_DEBUG, CMD_MODSYSTEM_HANDSHAKE, tmp, 2, &l_t_tx_proc_buf);
+    ///  LOG_BUFF_LEVEL(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
+    ///  tmp[0] = 0x02;
+    ///  ptl_build_frame(P2M_MOD_DEBUG, CMD_MODSYSTEM_HANDSHAKE, tmp, 2, &l_t_tx_proc_buf);
+    ///  LOG_BUFF_LEVEL(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
 }
 
 void ptl_init(void)
@@ -134,14 +134,14 @@ void ptl_init_running(void)
 {
     LOG_LEVEL("ptl_init_running\r\n");
     ptl_init();
-    OTMS(TASK_ID_PTL, OTMS_S_INVALID);
+    OTMS(TASK_ID_PTL_1, OTMS_S_INVALID);
 }
 
 // Start the UART communication for the task
 void ptl_start_running(void)
 {
     LOG_LEVEL("ptl_start_running\r\n");
-    OTMS(TASK_ID_PTL, OTMS_S_ASSERT_RUN);
+    OTMS(TASK_ID_PTL_1, OTMS_S_ASSERT_RUN);
 }
 
 // Assert that UART communication is running
@@ -149,7 +149,7 @@ void ptl_assert_running(void)
 {
     if (PTL_RUNNING_NONE != l_t_ptl_running_req_mask)
     {
-        OTMS(TASK_ID_PTL, OTMS_S_RUNNING);
+        OTMS(TASK_ID_PTL_1, OTMS_S_RUNNING);
         StartTickCounter(&l_t_ptl_rx_main_timer);
         StartTickCounter(&l_t_ptl_tx_main_timer);
         StartTickCounter(&l_t_ptl_error_detect_timer);
@@ -163,13 +163,13 @@ void ptl_running(void)
 {
     if (true == ptl_is_sleep_enable())
     {
-        OTMS(TASK_ID_PTL, OTMS_S_POST_RUN);
+        OTMS(TASK_ID_PTL_1, OTMS_S_POST_RUN);
     }
     else
     {
-        ptl_tx_event_message_handler();
+        ptl_1_tx_event_handler();
 
-        ptl_rx_event_message_handler();
+        ptl_1_rx_event_handler();
         ptl_frame_analysis_handler();
 
         ptl_error_detect();
@@ -184,14 +184,14 @@ void ptl_post_running(void)
     }
     else
     {
-        OTMS(TASK_ID_PTL, OTMS_S_RUNNING);
+        OTMS(TASK_ID_PTL_1, OTMS_S_RUNNING);
     }
 }
 
 // Stop the UART communication task
 void ptl_stop_running(void)
 {
-    OTMS(TASK_ID_PTL, OTMS_S_INVALID);
+    OTMS(TASK_ID_PTL_1, OTMS_S_INVALID);
 }
 
 // Request the UART task to start running (source indicates who requested)
@@ -243,19 +243,43 @@ void ptl_register_module(ptl_frame_type_t frame_type, module_send_handler_t send
 {
     if (l_u8_next_empty_module < PTL_MODULE_SUPPORT_CNT)
     {
-        l_t_module_info[l_u8_next_empty_module].frame_type = frame_type;
+        l_t_module_info[l_u8_next_empty_module].frame_type = (ptl_frame_type_t)(frame_type & 0x7f);
         l_t_module_info[l_u8_next_empty_module].send_handler = send_handler;
         l_t_module_info[l_u8_next_empty_module].receive_handler = receive_handler;
         l_u8_next_empty_module++;
+        LOG_LEVEL("frame_type=%d ptl module count=%d\r\n", l_t_module_info[l_u8_next_empty_module - 1].frame_type, l_u8_next_empty_module);
     }
+    else
+    {
+        LOG_LEVEL("ptl module is full count=%d\r\n", l_u8_next_empty_module);
+    }
+}
+
+/**
+ * Retrieves the module corresponding to the specified frame type.
+ */
+module_info_t *ptl_get_module(ptl_frame_type_t frame_type)
+{
+    module_info_t *module_info = NULL;
+
+    for (uint8_t i = 0; i < l_u8_next_empty_module; i++)
+    {
+        if (l_t_module_info[i].frame_type == (ptl_frame_type_t)(frame_type & 0x7F))
+        {
+            module_info = &l_t_module_info[i];
+            break;
+        }
+    }
+
+    return module_info;
 }
 
 // Build a communication frame with the given data and command
 void ptl_build_frame(ptl_frame_type_t frame_type, ptl_frame_cmd_t cmd, uint8_t *data, uint8_t datelen, ptl_proc_buff_t *framebuff)
 {
-    assert(data);
-    assert(framebuff);
-    assert((datelen + PTL_FRAME_HEADER_SIZE + 1) < PTL_FRAME_MAX_SIZE);
+    MY_ASSERT(data);
+    MY_ASSERT(framebuff);
+    MY_ASSERT((datelen + PTL_FRAME_HEADER_SIZE + 1) < PTL_FRAME_MAX_SIZE);
     ptl_build_frame_header(frame_type, cmd, datelen, framebuff);
     for (int i = 0; i < datelen; i++)
     {
@@ -269,30 +293,48 @@ void ptl_build_frame(ptl_frame_type_t frame_type, ptl_frame_cmd_t cmd, uint8_t *
 // Build the header of the communication frame
 void ptl_build_frame_header(ptl_frame_type_t frame_type, ptl_frame_cmd_t cmd, uint8_t datalen, ptl_proc_buff_t *proc_buff)
 {
-    assert(proc_buff);
-    if (frame_type >= A2M_MOD_START)
+    // Assert that the process buffer pointer is not NULL
+    MY_ASSERT(proc_buff);
+#ifdef TASK_MANAGER_STATE_MACHINE_MCU
+    proc_buff->buff[0] = MCU_TO_SOC_PTL_HEADER;
+#elif defined(TASK_MANAGER_STATE_MACHINE_SOC)
+    proc_buff->buff[0] = SOC_TO_MCU_PTL_HEADER;
+#else
+    // Optimize the check: if SOC_TO_MCU_MOD_START is 0, skip unnecessary comparison
+    if (frame_type >= SOC_TO_MCU_MOD_START)
     {
-        proc_buff->buff[0] = A2M_PTL_HEADER;
+        // If the frame type is greater than or equal to SOC_TO_MCU_MOD_START, set the header to SOC_TO_MCU_PTL_HEADER
+        proc_buff->buff[0] = SOC_TO_MCU_PTL_HEADER;
     }
-    else if (frame_type >= M2A_MOD_START)
+    else if (frame_type >= MCU_TO_SOC_MOD_START)
     {
-        proc_buff->buff[0] = M2A_PTL_HEADER;
+        // If the frame type is greater than or equal to MCU_TO_SOC_MOD_START, set the header to MCU_TO_SOC_PTL_HEADER
+        proc_buff->buff[0] = MCU_TO_SOC_PTL_HEADER;
     }
     else
     {
-        proc_buff->buff[0] = DBG_PTL_HEADER;
+        // If the frame type does not meet any above conditions, set the header to DBG_PTL_HEADER
+        // proc_buff->buff[0] = DBG_PTL_HEADER;
     }
+#endif
 
+    // Store the frame type at position 1 of the buffer
     proc_buff->buff[1] = frame_type;
+
+    // Store the command at position 2 of the buffer
     proc_buff->buff[2] = cmd;
+
+    // Store the data length at position 3 of the buffer
     proc_buff->buff[3] = datalen;
+
+    // Calculate and store the checksum at position 4 of the buffer (checksum for the header portion)
     proc_buff->buff[4] = ptl_get_checksum(proc_buff->buff, PTL_FRAME_HEADER_SIZE - 1);
 }
 
 // Calculate the checksum for the data
 uint8_t ptl_get_checksum(uint8_t *data, uint8_t length)
 {
-    assert(data);
+    MY_ASSERT(data);
     uint8_t sum = 0;
     for (int i = 0; i < length; i++)
     {
@@ -338,7 +380,7 @@ void ptl_receive_handler(uint8_t data)
  * Handles the event message for transmitting data via UART.
  * Checks if enough time has passed since the last transmission and sends the data if necessary.
  */
-void ptl_tx_event_message_handler(void)
+void ptl_1_tx_event_handler(void)
 {
     module_info_t *p_module = NULL;
 
@@ -352,7 +394,7 @@ void ptl_tx_event_message_handler(void)
     StartTickCounter(&l_t_ptl_tx_main_timer);
 
     // Retrieve the message from the UART task message queue
-    Msg_t *msg = get_message(TASK_ID_PTL);
+    Msg_t *msg = get_message(TASK_ID_PTL_1);
     if (msg->id != NO_MSG)
     {
         ptl_frame_type_t frame_type = (ptl_frame_type_t)msg->id;
@@ -368,16 +410,16 @@ void ptl_tx_event_message_handler(void)
             bool res = p_module->send_handler(frame_type, (ptl_frame_cmd_t)param1, param2, &l_t_tx_proc_buf);
             if (res)
             {
-
-// Send the processed data over UART
-#ifdef TEST_LOG_DEBUG_PTL_TX_FRAME
-                LOG_LEVEL("msg_id=%02x cmd=%02x data[]=", (uint8_t)msg->id, (uint8_t)msg->param1);
-                // DBG("[ ] msg_id:%02x cmd:%02x\r\n", (uint8_t)msg->id, (uint8_t)msg->param1);
-                LOG_BUFF(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
-#endif
-
-                ptl_hal_tx(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
+                ptl_1_hal_tx(l_t_tx_proc_buf.buff, l_t_tx_proc_buf.size);
             }
+        }
+        else if (NULL == p_module->send_handler)
+        {
+            LOG_LEVEL("module is not mached iframe_type=%d param1=%d param2=%d.\r\n", frame_type, param1, param2);
+        }
+        else if (NULL == p_module)
+        {
+            LOG_LEVEL("module is null iframe_type=%d param1=%d param2=%d.\r\n", frame_type, param1, param2);
         }
     }
     else
@@ -391,7 +433,7 @@ void ptl_tx_event_message_handler(void)
  * Handler for receiving UART data byte-by-byte.
  * Calls the UART reception handler to store the received data.
  */
-void ptl_rx_event_message_handler(void)
+void ptl_1_rx_event_handler(void)
 {
     // Call the HAL function to process received byte
     // #ifdef PLATFORM_ITE_OPEN_RTOS
@@ -401,7 +443,7 @@ void ptl_rx_event_message_handler(void)
     {
         if (l_t_rx_proc_buf.size < PTL_FRAME_MAX_SIZE)
         {
-            count = hal_com_uart_get_fifo_data(&l_t_rx_proc_buf.buff[l_t_rx_proc_buf.size], PTL_FRAME_MAX_SIZE - l_t_rx_proc_buf.size);
+            count = hal_com_uart_get_fifo_data_1(&l_t_rx_proc_buf.buff[l_t_rx_proc_buf.size], PTL_FRAME_MAX_SIZE - l_t_rx_proc_buf.size);
             if (count <= 0)
                 break;
             l_t_rx_proc_buf.size = l_t_rx_proc_buf.size + count;
@@ -411,7 +453,6 @@ void ptl_rx_event_message_handler(void)
             break;
         }
     }
-    // #endif
 }
 
 /**
@@ -429,18 +470,18 @@ void ptl_frame_analysis_handler(void)
 
 /**
  * Removes any data from the buffer that is not part of the header.
- * Only keeps the data after the A2M_PTL_HEADER byte.
+ * Only keeps the data after the SOC_TO_MCU_PTL_HEADER byte.
  */
 void ptl_remove_none_header_data(ptl_proc_buff_t *proc_buff)
 {
-// If the first byte is A2M_PTL_HEADER, no action needed
+// If the first byte is SOC_TO_MCU_PTL_HEADER, no action needed
 #ifdef TASK_MANAGER_STATE_MACHINE_MCU
-    if (proc_buff->buff[0] == A2M_PTL_HEADER)
+    if (proc_buff->buff[0] == SOC_TO_MCU_PTL_HEADER)
         return;
-    // Search for A2M_PTL_HEADER and remove data before it
+    // Search for SOC_TO_MCU_PTL_HEADER and remove data before it
     for (uint16_t i = 0; i < proc_buff->size; i++)
     {
-        if (proc_buff->buff[i] == A2M_PTL_HEADER)
+        if (proc_buff->buff[i] == SOC_TO_MCU_PTL_HEADER)
         {
             // Shift data to remove the position before the header
             for (uint16_t j = i; j < proc_buff->size; j++)
@@ -451,13 +492,14 @@ void ptl_remove_none_header_data(ptl_proc_buff_t *proc_buff)
             return;
         }
     }
-#endif
-#ifdef TASK_MANAGER_STATE_MACHINE_SOC
-    if (proc_buff->buff[0] == M2A_PTL_HEADER)
+// #endif
+// #ifdef TASK_MANAGER_STATE_MACHINE_SOC
+#else
+    if (proc_buff->buff[0] == MCU_TO_SOC_PTL_HEADER)
         return;
     for (uint16_t i = 0; i < proc_buff->size; i++)
     {
-        if (proc_buff->buff[i] == M2A_PTL_HEADER)
+        if (proc_buff->buff[i] == MCU_TO_SOC_PTL_HEADER)
         {
             // remove data before header
             for (uint16_t j = i; j < proc_buff->size; j++)
@@ -491,14 +533,20 @@ void ptl_find_valid_frame(ptl_proc_buff_t *proc_buff)
     uint16_t next_valid_offset = 0; // Next valid frame offset
     uint16_t offset = 0;            // Header offset
 
+    if (proc_buff->size < PTL_FRAME_MIN_SIZE)
+        return;
+#ifdef TEST_LOG_DEBUG_PTL_RX_FRAME
+    /// LOG_LEVEL("proc_buff.size=%d data[]=", proc_buff->size);
+    /// LOG_BUFF(proc_buff->buff, proc_buff->size);
+#endif
     // Iterate through the received buffer to find a valid frame
     for (uint16_t i = 0; i < proc_buff->size; i++)
     {
 #ifdef TASK_MANAGER_STATE_MACHINE_MCU
-        if (proc_buff->buff[i] == A2M_PTL_HEADER)
+        if (proc_buff->buff[i] == SOC_TO_MCU_PTL_HEADER)
         {
 #else
-        if (proc_buff->buff[i] == M2A_PTL_HEADER)
+        if (proc_buff->buff[i] == MCU_TO_SOC_PTL_HEADER)
         {
 #endif
             offset = i;
@@ -570,38 +618,46 @@ void ptl_find_valid_frame(ptl_proc_buff_t *proc_buff)
  * Processes the valid frame after it has been extracted from the buffer.
  * The payload is passed to the appropriate module handler.
  */
-void ptl_proc_valid_frame(uint8_t *data, uint16_t length)
+void ptl_proc_valid_frame(uint8_t *buffer, uint16_t length)
 {
     ptl_frame_payload_t payload;
     module_info_t *module_ = NULL;
     ptl_proc_buff_t *tx_frame = &l_t_tx_proc_buf;
 
     // Set up the frame payload from the received data
-    payload.frame_type = (ptl_frame_type_t)data[1];
-    payload.cmd = (ptl_frame_cmd_t)data[2];
-    payload.data_len = data[3];
-    payload.data = &data[PTL_FRAME_DATA_START];
+    payload.frame_type = (ptl_frame_type_t)buffer[1];
+    payload.cmd = (ptl_frame_cmd_t)buffer[2];
+    payload.data_len = buffer[3];
+    payload.data = &buffer[PTL_FRAME_DATA_START];
 
     // Get the module associated with the frame type
     module_ = ptl_get_module(payload.frame_type);
 
 #ifdef TEST_LOG_DEBUG_PTL_RX_FRAME
-    LOG_LEVEL("frame_type=%02x cmd=%02x,length=%d data[]=", payload.frame_type, payload.cmd, payload.data_len);
-    LOG_BUFF(data, length);
+    LOG_LEVEL("payload.frame_type=%02x cmd=%02x,length=%d data[]=", payload.frame_type, payload.cmd, payload.data_len);
+    LOG_BUFF(buffer, length);
 #endif
 
     // If module handler exists, call the receive handler
     if (NULL != module_)
     {
-        tx_frame->size = 0;
+        if (NULL == module_->receive_handler)
+        {
+            LOG_LEVEL("module is not mached payload.frame_type=%d payload.cmd=%d payload.data_len=%d.\r\n", payload.frame_type, payload.cmd, payload.data_len);
+            return;
+        }
         bool res = module_->receive_handler(&payload, tx_frame);
-        if (res && tx_frame->size > 0)
+        if (res)
         {
             // If the handler succeeds, clear error flag and restart timer
             lb_com_error = false;
             StartTickCounter(&l_t_ptl_error_detect_timer);
-            ptl_hal_tx(tx_frame->buff, tx_frame->size); // Send response via UART
+            ptl_1_hal_tx(tx_frame->buff, tx_frame->size); // Send response via UART
         }
+    }
+    else /// if (NULL == module_)
+    {
+        LOG_LEVEL("invalid module is null.\r\n");
     }
 }
 
@@ -622,28 +678,14 @@ void ptl_error_detect(void)
 }
 
 /**
- * Retrieves the module corresponding to the specified frame type.
- */
-module_info_t *ptl_get_module(ptl_frame_type_t frame_type)
-{
-    module_info_t *module_info = NULL;
-
-    for (uint8_t i = 0; i < l_u8_next_empty_module; i++)
-    {
-        if (l_t_module_info[i].frame_type == (frame_type & 0x7F))
-        {
-            module_info = &l_t_module_info[i];
-            break;
-        }
-    }
-
-    return module_info;
-}
-
-/**
  * Sends data over UART using the hardware abstraction layer.
  */
-void ptl_hal_tx(uint8_t *data, uint16_t length)
+void ptl_1_hal_tx(uint8_t *data, uint16_t length)
 {
-    hal_com_uart_send_buffer(data, length);
+    // Send the processed data over UART
+#ifdef TEST_LOG_DEBUG_PTL_TX_FRAME
+    LOG_LEVEL("data[%d] = ", length);
+    LOG_BUFF(data, length);
+#endif
+    hal_com_uart_send_buffer_1(data, length);
 }

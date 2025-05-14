@@ -63,15 +63,20 @@ typedef struct
 void dbg_log_printf_init(void);
 
 // Initializes the UART protocol (e.g., UART configuration, GPIO, etc.)
-void hal_com_uart_init(uint8_t task_id);
+void hal_uart_init(uint8_t task_id);
 // Sends a string via UART, returning the number of bytes sent
 uint8_t hal_com_uart_send_string(const char* str, uint8_t length);
 
 // Sends a buffer of data via UART, returning the number of bytes sent
-uint8_t hal_com_uart_send_buffer(uint8_t* buff, uint16_t length);
+uint8_t hal_com_uart_send_buffer_1(const uint8_t* buffer, uint16_t length);
+uint8_t hal_com_uart_send_buffer_2(const uint8_t* buffer, uint16_t length);
 
 // Reads data from the UART FIFO and stores it in the provided buffer
-uint8_t hal_com_uart_get_fifo_data(uint8_t* buffer, uint16_t length);  
+uint8_t hal_com_uart_get_fifo_data_1(uint8_t* buffer, uint16_t length);  
+uint8_t hal_com_uart_get_fifo_data_2(uint8_t* buffer, uint16_t length);  
+
+void hal_com_uart_receive_callback_ptl_1(const uint8_t *buffer, uint16_t length);
+void hal_com_uart_receive_callback_ptl_2(const uint8_t *buffer, uint16_t length);
 
 #ifdef PLATFORM_CST_OSAL_RTOS
 uint16_t hal_com_uart_event_handler(uint8_t task_id, uint16 events);

@@ -36,12 +36,14 @@
 #include "octopus_carinfor.h"
 #include "octopus_msgqueue.h"
 #include "octopus_sif.h"
-
+#include "octopus_flash.h"
+#include "octopus_ipc.h"
+#include "octopus_message.h"
 /*******************************************************************************
  * DEBUG SWITCH MACROS
  */
-#define CARINFOR_PTL_NO_ACK
-/// #define TEST_LOG_DEBUG_SIF  // Uncomment to enable debug logging for SIF module
+/// #define CARINFOR_PTL_ACK
+///  #define TEST_LOG_DEBUG_SIF  // Uncomment to enable debug logging for SIF module
 
 /*******************************************************************************
  * MACROS
@@ -69,19 +71,17 @@
 static bool meter_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
 static bool meter_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
 
-static bool indicator_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
-static bool indicator_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
+// static bool indicator_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
+// static bool indicator_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
 
-static bool drivinfo_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
-static bool drivinfo_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
+// static bool drivinfo_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff);
+// static bool drivinfo_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff);
 
 static void app_car_controller_msg_handler(void); // Process messages related to car controller
 #ifdef TASK_MANAGER_STATE_MACHINE_SIF
 static void app_car_controller_sif_updating(void); // Update the SIF (System Information Frame)
 #endif
-#ifdef BATTERY_MANAGER
-static void get_battery_voltage(void); // Retrieve the current battery voltage
-#endif
+
 #ifdef TEST_LOG_DEBUG_SIF
 static void log_sif_data(uint8_t *data, uint8_t maxlen); // Log SIF data for debugging purposes
 #endif
@@ -98,14 +98,16 @@ static uint8_t sif_buff[12] = {0}; // Buffer for storing SIF data
 static carinfo_sif_t lt_sif = {0}; // Local SIF data structure
 #endif
 
-static carinfo_meter_t lt_meter = {0};         // Local meter data structure
-static carinfo_indicator_t lt_indicator = {0}; // Local indicator data structure
+carinfo_meter_t lt_carinfo_meter = {0};         // Local meter data structure
+carinfo_indicator_t lt_carinfo_indicator = {0}; // Local indicator data structure
+carinfo_battery_t lt_carinfo_battery = {0};
+carinfo_error_t lt_carinfo_error;
 // static carinfo_drivinfo_t lt_drivinfo = {0};   // Local drivetrain information
 
 // Timer variables
-static uint32_t l_t_msg_wait_meter_timer; // Timer for 10 ms message wait (not used currently)
-static uint32_t l_t_msg_wait_50_timer;    // Timer for 50 ms message wait
-static uint32_t l_t_msg_wait_100_timer;   // Timer for 100 ms message wait
+// static uint32_t l_t_msg_wait_meter_timer; // Timer for 10 ms message wait (not used currently)
+static uint32_t l_t_msg_wait_50_timer; // Timer for 50 ms message wait
+// static uint32_t l_t_msg_wait_100_timer;   // Timer for 100 ms message wait
 
 static uint32_t l_t_soc_timer; // Timer for state of charge monitoring
 
@@ -121,11 +123,16 @@ static uint32_t l_t_soc_timer; // Timer for state of charge monitoring
 void app_carinfo_init_running(void)
 {
     LOG_LEVEL("app_carinfo_init_running\r\n");
-    ptl_register_module(M2A_MOD_METER, meter_module_send_handler, meter_module_receive_handler);
-    ptl_register_module(M2A_MOD_INDICATOR, indicator_module_send_handler, indicator_module_receive_handler);
-    ptl_register_module(M2A_MOD_DRIV_INFO, drivinfo_module_send_handler, drivinfo_module_receive_handler);
+    ptl_register_module(MCU_TO_SOC_MOD_CARINFOR, meter_module_send_handler, meter_module_receive_handler);
+    // ptl_register_module(MCU_TO_SOC_MOD_INDICATOR, indicator_module_send_handler, indicator_module_receive_handler);
+    // ptl_register_module(MCU_TO_SOC_MOD_DRIV_INFO, drivinfo_module_send_handler, drivinfo_module_receive_handler);
 
+    // srand(1234); // Seed the random number generator
     OTMS(TASK_ID_CAR_INFOR, OTMS_S_INVALID);
+#ifdef USE_EEROM_FOR_DATA_SAVING
+    E2ROMReadToBuff(0, (uint8_t *)&lt_carinfo_meter, sizeof(carinfo_meter_t));
+    LOG_BUFF_LEVEL((uint8_t *)&lt_carinfo_meter, sizeof(carinfo_meter_t));
+#endif
 }
 
 void app_carinfo_start_running(void)
@@ -136,23 +143,18 @@ void app_carinfo_start_running(void)
 
 void app_carinfo_assert_running(void)
 {
-    ptl_reqest_running(M2A_MOD_METER);
-    ptl_reqest_running(M2A_MOD_INDICATOR);
-    ptl_reqest_running(M2A_MOD_DRIV_INFO);
-    StartTickCounter(&l_t_msg_wait_meter_timer);
+    ptl_reqest_running(MCU_TO_SOC_MOD_CARINFOR);
+    // ptl_reqest_running(MCU_TO_SOC_MOD_INDICATOR);
+    // ptl_reqest_running(MCU_TO_SOC_MOD_DRIV_INFO);
+    // StartTickCounter(&l_t_msg_wait_meter_timer);
     StartTickCounter(&l_t_msg_wait_50_timer);
-    StartTickCounter(&l_t_msg_wait_100_timer);
+    // StartTickCounter(&l_t_msg_wait_100_timer);
     StartTickCounter(&l_t_soc_timer);
     OTMS(TASK_ID_CAR_INFOR, OTMS_S_RUNNING);
 }
 
 void app_carinfo_running(void)
 {
-    /// if(MB_ST_OFF == app_power_state_get_mb_state())
-    ///{
-    /// OTMS(CAR_INFOR_ID, OTMS_S_POST_RUN);
-    ///}
-
 #ifdef TASK_MANAGER_STATE_MACHINE_SIF
     app_car_controller_sif_updating();
 #endif
@@ -167,15 +169,9 @@ void app_carinfo_running(void)
 
 void app_carinfo_post_running(void)
 {
-    ptl_release_running(M2A_MOD_METER);
-    ptl_release_running(M2A_MOD_INDICATOR);
-    ptl_release_running(M2A_MOD_DRIV_INFO);
-
-    /// if(MB_ST_OFF != app_power_state_get_mb_state())
-    ///{
-    /// OTMS(CAR_INFOR_ID, OTMS_S_ASSERT_RUN);
-    /// }
-    /// goto app_carinfo_running;
+    ptl_release_running(MCU_TO_SOC_MOD_CARINFOR);
+    // ptl_release_running(MCU_TO_SOC_MOD_INDICATOR);
+    // ptl_release_running(MCU_TO_SOC_MOD_DRIV_INFO);
 }
 
 void app_carinfo_stop_running(void)
@@ -190,7 +186,6 @@ void app_carinfo_on_enter_run(void)
     ///     OTMS(CAR_INFOR_ID, OTMS_S_START);
     /// }
 }
-
 void app_carinfo_on_exit_post_run(void)
 {
     OTMS(TASK_ID_CAR_INFOR, OTMS_S_STOP);
@@ -198,17 +193,25 @@ void app_carinfo_on_exit_post_run(void)
 
 uint16_t app_carinfo_getSpeed(void)
 {
-    return lt_meter.actual_speed;
+    return lt_carinfo_meter.speed_actual;
 }
 
 carinfo_indicator_t *app_carinfo_get_indicator_info(void)
 {
-    return &lt_indicator;
+    return &lt_carinfo_indicator;
 }
 
 carinfo_meter_t *app_carinfo_get_meter_info(void)
 {
-    return &lt_meter;
+    return &lt_carinfo_meter;
+}
+carinfo_battery_t *app_carinfo_get_battery_info(void)
+{
+    return &lt_carinfo_battery;
+}
+carinfo_error_t *app_carinfo_get_error_info(void)
+{
+    return &lt_carinfo_error;
 }
 
 carinfo_drivinfo_t *app_carinfo_get_drivinfo_info(void)
@@ -223,58 +226,29 @@ carinfo_drivinfo_t *app_carinfo_get_drivinfo_info(void)
 // Depending on the frame type and command, it constructs appropriate data and fills the buffer for transmission.
 bool meter_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff)
 {
-    assert(buff); // Ensure the buffer pointer is valid
-
-    uint8_t tmp[16] = {0}; // Temporary buffer to hold payload data
-
-    // Process M2A (Module to Application) frame
-    if (M2A_MOD_METER == frame_type)
+    MY_ASSERT(buff);
+    // uint8_t tmp[16] = {0};
+    if (MCU_TO_SOC_MOD_CARINFOR == frame_type)
     {
         switch (param1)
         {
-        case CMD_MODMETER_RPM_SPEED:
-            // Fill speed and RPM values into payload
-            tmp[0] = MSB_WORD(lt_meter.actual_speed); // High byte of real speed
-            tmp[1] = LSB_WORD(lt_meter.actual_speed); // Low byte of real speed
-            tmp[2] = MSB_WORD(lt_meter.rpm);          // High byte of RPM
-            tmp[3] = LSB_WORD(lt_meter.rpm);          // Low byte of RPM
-
-            // Build protocol frame with data
-            ptl_build_frame(M2A_MOD_METER, CMD_MODMETER_RPM_SPEED, tmp, 4, buff);
+        case CMD_MOD_CARINFOR_INDICATOR:
+            ptl_build_frame(MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_INDICATOR, (uint8_t *)&lt_carinfo_indicator, sizeof(carinfo_indicator_t), buff);
             return true;
-
-        case CMD_MODMETER_SOC:
-            // Fill SOC, voltage, and current info into payload
-            tmp[0] = lt_meter.soc;               // State of charge (SOC)
-            tmp[1] = MSB_WORD(lt_meter.voltage); // High byte of voltage
-            tmp[2] = LSB_WORD(lt_meter.voltage); // Low byte of voltage
-            tmp[3] = MSB_WORD(lt_meter.current); // High byte of current
-            tmp[4] = LSB_WORD(lt_meter.current); // Low byte of current
-            tmp[5] = lt_meter.voltage_system;    // System voltage
-            tmp[6] = 0;                          // Reserved or unused byte
-
-            // Construct and send protocol frame
-            ptl_build_frame(M2A_MOD_METER, CMD_MODMETER_SOC, tmp, 7, buff);
+        case CMD_MOD_CARINFOR_METER:
+            // LOG_LEVEL("lt_meter.speed=%d\r\n",lt_carinfo_meter.speed);
+            ptl_build_frame(MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_METER, (uint8_t *)&lt_carinfo_meter, sizeof(carinfo_meter_t), buff);
             return true;
-
+        case CMD_MOD_CARINFOR_BATTERY:
+            ptl_build_frame(MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_BATTERY, (uint8_t *)&lt_carinfo_battery, sizeof(carinfo_battery_t), buff);
+            return true;
+        case CMD_MOD_CARINFOR_ERROR:
+            ptl_build_frame(MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_ERROR, (uint8_t *)&lt_carinfo_error, sizeof(carinfo_error_t), buff);
+            return true;
         default:
             break;
         }
     }
-    // Handle Application to Module (A2M) frame — not expected for send
-    else if (A2M_MOD_METER == frame_type)
-    {
-        switch (param1)
-        {
-        case CMD_MODMETER_RPM_SPEED:
-            return false;
-        case CMD_MODMETER_SOC:
-            return false;
-        default:
-            break;
-        }
-    }
-
     return false; // Unsupported frame or command
 }
 
@@ -282,67 +256,60 @@ bool meter_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uin
 // It parses incoming payload and updates the corresponding meter information.
 bool meter_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff)
 {
-    assert(payload); // Ensure the payload pointer is valid
-    assert(ackbuff); // Ensure the ack buffer pointer is valid
-
-#ifndef CARINFOR_PTL_NO_ACK
-    uint8_t tmp = 0; // Temporary buffer for ACK content
-#endif
-
-    // Handle A2M (Application to Module) frames — usually ACKs or control commands
-    if (A2M_MOD_METER == payload->frame_type)
-    {
-        switch (payload->cmd)
-        {
-        case CMD_MODMETER_RPM_SPEED:
-            // No action needed — likely an ACK
-            return false;
-        case CMD_MODMETER_SOC:
-            // No action needed — likely an ACK
-            return false;
-        default:
-            break;
-        }
-    }
+    MY_ASSERT(payload); // Ensure the payload pointer is valid
+    MY_ASSERT(ackbuff); // Ensure the ack buffer pointer is valid
     // Handle M2A (Module to Application) frames — actual data updates
-    else if (M2A_MOD_METER == payload->frame_type)
+    //LOG_LEVEL("payload->frame_type=%d payload->data_len=%d\r\n",payload->frame_type, payload->data_len);
+    if (MCU_TO_SOC_MOD_CARINFOR == payload->frame_type)
     {
         switch (payload->cmd)
         {
-        case CMD_MODMETER_RPM_SPEED:
-            // Extract real speed and RPM from received data
-            lt_meter.actual_speed = MK_WORD(payload->data[0], payload->data[1]);
-            lt_meter.rpm = MK_WORD(payload->data[2], payload->data[3]);
+        case CMD_MOD_CARINFOR_INDICATOR:
+            if (payload->data_len == sizeof(carinfo_indicator_t))
+            {
+                memcpy(&lt_carinfo_indicator, payload->data, payload->data_len);
+                send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, MSG_CAR_GET_INDICATOR_INFO, 0);
+            }
+            else
+            {
+                LOG_LEVEL("wrong indicator data payload->data_len=%d\r\n", payload->data_len);
+            }
+            break;
 
-            // Optionally calculate displayed speed (e.g., with a scaling factor)
-            lt_meter.speed = lt_meter.actual_speed * 11 / 10;
+        case CMD_MOD_CARINFOR_METER:
+            if (payload->data_len == sizeof(carinfo_meter_t))
+            {
+                memcpy(&lt_carinfo_meter, payload->data, payload->data_len);
+                send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, MSG_CAR_GET_METER_INFO, 0);
+            }
+            else
+            {
+                LOG_LEVEL("wrong meter data payload->data_len=%d\r\n", payload->data_len);
+            }
+            break;
 
-#ifndef CARINFOR_PTL_NO_ACK
-            // Respond with ACK
-            tmp = 0x01;
-            ptl_build_frame(A2M_MOD_METER, CMD_MODMETER_RPM_SPEED, &tmp, 1, ackbuff);
-#endif
-            // Notify other components that new meter info is available
-            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_METER_INFO, 0);
-            return true;
-
-        case CMD_MODMETER_SOC:
-            // Extract SOC, voltage, current, and system voltage
-            lt_meter.soc = payload->data[0];
-            lt_meter.voltage = MK_WORD(payload->data[1], payload->data[2]);
-            lt_meter.current = MK_WORD(payload->data[3], payload->data[4]);
-            lt_meter.voltage_system = payload->data[5];
-
-#ifndef CARINFOR_PTL_NO_ACK
-            // Respond with ACK
-            tmp = 0x01;
-            ptl_build_frame(A2M_MOD_METER, CMD_MODMETER_SOC, &tmp, 1, ackbuff);
-#endif
-            // Notify other components that new meter info is available
-            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_METER_INFO, 0);
-
-            return true;
-
+        case CMD_MOD_CARINFOR_BATTERY:
+            if (payload->data_len == sizeof(carinfo_battery_t))
+            {
+                memcpy(&lt_carinfo_battery, payload->data, payload->data_len);
+                send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, MSG_CAR_GET_BATTERY_INFO, 0);
+            }
+            else
+            {
+                LOG_LEVEL("wrong battery data payload->data_len=%d\r\n", payload->data_len);
+            }
+            break;
+        case CMD_MOD_CARINFOR_ERROR:
+            if (payload->data_len == sizeof(carinfo_error_t))
+            {
+                memcpy(&lt_carinfo_error, payload->data, payload->data_len);
+                send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, MSG_CAR_GET_ERROR_INFO, 0);
+            }
+            else
+            {
+                LOG_LEVEL("wrong error status data payload->data_len=%d sizeof(carinfo_error_t)=%d\r\n", payload->data_len,sizeof(carinfo_error_t));
+            }
+            break;
         default:
             break;
         }
@@ -351,220 +318,62 @@ bool meter_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t 
     return false; // Unsupported frame type or command
 }
 
-/**
- * @brief Handles sending messages related to the indicator module.
- *
- * @param frame_type The type of protocol frame (e.g., M2A_MOD_INDICATOR).
- * @param param1 Command ID (e.g., CMD_MODINDICATOR_INDICATOR).
- * @param param2 Reserved or additional parameters (unused here).
- * @param buff Output buffer where the protocol frame is constructed.
- * @return true if the message was handled and frame was built successfully.
- * @return false if the frame_type or command is not supported.
- */
-bool indicator_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff)
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void app_car_controller_msg_handler(void)
 {
-    assert(buff); // Ensure buffer pointer is not null
 
-    uint8_t tmp[16] = {0}; // Temporary buffer to hold encoded indicator states
-
-    if (M2A_MOD_INDICATOR == frame_type)
+    Msg_t *msg = get_message(TASK_ID_CAR_INFOR);
+    if (msg->id == NO_MSG)
     {
-        switch (param1)
+        return;
+    }
+    if (MCU_TO_SOC_MOD_CARINFOR == msg->id)
+    {
+        switch (msg->param1)
         {
-        case CMD_MODINDICATOR_INDICATOR:
-            // Pack each bit in tmp[] to represent individual indicator light states
-            lt_indicator.highBeam ? SetBit(tmp[0], 0) : ClrBit(tmp[0], 0);
-            lt_indicator.lowBeam ? SetBit(tmp[0], 1) : ClrBit(tmp[0], 1);
-            lt_indicator.position ? SetBit(tmp[0], 2) : ClrBit(tmp[0], 2);
-            lt_indicator.frontFog ? SetBit(tmp[0], 3) : ClrBit(tmp[0], 3);
-            lt_indicator.rearFog ? SetBit(tmp[0], 4) : ClrBit(tmp[0], 4);
-            lt_indicator.leftTurn ? SetBit(tmp[0], 5) : ClrBit(tmp[0], 5);
-            lt_indicator.rightTurn ? SetBit(tmp[0], 6) : ClrBit(tmp[0], 6);
-            lt_indicator.ready ? SetBit(tmp[0], 7) : ClrBit(tmp[0], 7);
-
-            lt_indicator.charge ? SetBit(tmp[1], 0) : ClrBit(tmp[1], 0);
-            lt_indicator.parking ? SetBit(tmp[1], 1) : ClrBit(tmp[1], 1);
-            lt_indicator.ecuFault ? SetBit(tmp[1], 2) : ClrBit(tmp[1], 2);
-            lt_indicator.sensorFault ? SetBit(tmp[1], 3) : ClrBit(tmp[1], 3);
-            lt_indicator.motorFault ? SetBit(tmp[1], 4) : ClrBit(tmp[1], 4);
-
-            // Build protocol frame with indicator data
-            ptl_build_frame(M2A_MOD_INDICATOR, CMD_MODINDICATOR_INDICATOR, tmp, 5, buff);
-            return true;
-
-        case CMD_MODINDICATOR_ERROR_INFO:
-            // TODO: Future expansion - error info sending
-            ptl_build_frame(M2A_MOD_INDICATOR, CMD_MODINDICATOR_ERROR_INFO, tmp, 5, buff);
-            return true;
-
+        case CMD_MOD_CARINFOR_INDICATOR:
+            send_message(TASK_ID_PTL_1, MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_INDICATOR, 0);
+            break;
+        case CMD_MOD_CARINFOR_METER:
+            send_message(TASK_ID_PTL_1, MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_METER, 0);
+            break;
+        case CMD_MOD_CARINFOR_BATTERY:
+            send_message(TASK_ID_PTL_1, MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_BATTERY, 0);
+            break;
+        case CMD_MOD_CARINFOR_ERROR:
+            send_message(TASK_ID_PTL_1, MCU_TO_SOC_MOD_CARINFOR, CMD_MOD_CARINFOR_ERROR, 0);
+            break;
         default:
             break;
         }
     }
-    else if (A2M_MOD_INDICATOR == frame_type)
+}
+// 添加错误代码
+void app_carinfo_add_error_code(ERROR_CODE code)
+{
+    if (code != app_carinfo_get_top_error_code())
     {
-        // For commands coming from MCU to Application, no need to respond here
-        switch (param1)
+        if (code >= ERROR_CODE_BEGIN && code <= ERROR_CODE_END)
         {
-        case CMD_MODINDICATOR_INDICATOR:
-            return false;
-        case CMD_MODINDICATOR_ERROR_INFO:
-            return false;
-        default:
-            break;
+            // 历史故障信息顺位下移
+            for (int i = 0; i < ERROR_CODE_COUNT - 1; i++)
+            {
+                lt_carinfo_error.error[i + 1] = lt_carinfo_error.error[i];
+            }
+            // 插入置顶的最新故障信息
+            lt_carinfo_error.error[0] = code;
         }
     }
-
-    return false;
+    /// theIndicatorFlag.error = true;
 }
 
-/**
- * @brief Handles received messages related to the indicator module.
- *
- * @param payload Incoming protocol frame payload.
- * @param ackbuff Buffer to store ACK response if required.
- * @return true if the frame was successfully handled.
- * @return false if the frame or command is not recognized or requires no action.
- */
-bool indicator_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff)
+// 获取置顶的错误代码
+uint8_t app_carinfo_get_top_error_code(void)
 {
-    assert(payload); // Ensure payload is not null
-    assert(ackbuff); // Ensure ack buffer is not null
-
-#ifndef CARINFOR_PTL_NO_ACK
-    uint8_t tmp = 0; // Temporary variable to send ACK byte if needed
-#endif
-
-    if (A2M_MOD_INDICATOR == payload->frame_type)
-    {
-        // Received from MCU to Application, usually an ACK
-        switch (payload->cmd)
-        {
-        case CMD_MODINDICATOR_INDICATOR:
-            // ACK received, nothing to process
-            return false;
-        case CMD_MODINDICATOR_ERROR_INFO:
-            // ACK received, nothing to process
-            return false;
-        default:
-            break;
-        }
-    }
-    else if (M2A_MOD_INDICATOR == payload->frame_type)
-    {
-        // Received from Application to MCU - decode and update indicator states
-        switch (payload->cmd)
-        {
-        case CMD_MODINDICATOR_INDICATOR:
-            // Parse bitfields from received payload to update lt_indicator states
-            lt_indicator.highBeam = GetBit(payload->data[0], 0);  // High beam
-            lt_indicator.lowBeam = GetBit(payload->data[0], 1);   // Low beam
-            lt_indicator.position = GetBit(payload->data[0], 2);  // Position light
-            lt_indicator.frontFog = GetBit(payload->data[0], 3);  // Front fog light
-            lt_indicator.rearFog = GetBit(payload->data[0], 4);   // Rear fog light
-            lt_indicator.leftTurn = GetBit(payload->data[0], 5);  // Left turn signal
-            lt_indicator.rightTurn = GetBit(payload->data[0], 6); // Right turn signal
-            lt_indicator.ready = GetBit(payload->data[0], 7);     // Ready status
-
-            lt_indicator.charge = GetBit(payload->data[1], 0);      // Charging status
-            lt_indicator.parking = GetBit(payload->data[1], 1);     // Parking status
-            lt_indicator.ecuFault = GetBit(payload->data[1], 2);    // ECU fault
-            lt_indicator.sensorFault = GetBit(payload->data[1], 3); // Sensor fault
-            lt_indicator.motorFault = GetBit(payload->data[1], 4);  // Motor fault
-
-#ifndef CARINFOR_PTL_NO_ACK
-            // Send back ACK response if ACK is enabled
-            tmp = 0x01;
-            ptl_build_frame(A2M_MOD_INDICATOR, CMD_MODINDICATOR_INDICATOR, &tmp, 1, ackbuff);
-#endif
-            // LOG_LEVEL("frame_type=%02x cmd=%02x,length=%d data[]=", payload->frame_type, payload->cmd, payload->data_len);
-            // LOG_BUFF(payload->data, payload->data_len);
-            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_INDICATOR_INFO, 0);
-            return true;
-
-        case CMD_MODINDICATOR_ERROR_INFO:
-#ifndef CARINFOR_PTL_NO_ACK
-            // ACK for error info command
-            tmp = 0x01;
-            ptl_build_frame(A2M_MOD_INDICATOR, CMD_MODINDICATOR_ERROR_INFO, &tmp, 1, ackbuff);
-#endif
-
-            return true;
-        default:
-            break;
-        }
-    }
-
-    return false;
-}
-
-bool drivinfo_module_send_handler(ptl_frame_type_t frame_type, uint16_t param1, uint16_t param2, ptl_proc_buff_t *buff)
-{
-    assert(buff);
-    uint8_t tmp[16] = {0};
-    if (M2A_MOD_DRIV_INFO == frame_type)
-    {
-        switch (param1)
-        {
-        case CMD_MODDRIVINFO_GEAR:
-            // tmp[0] = lt_drivinfo.gear;
-            // tmp[1] = lt_drivinfo.driveMode;
-            ptl_build_frame(M2A_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, tmp, 2, buff);
-            return true;
-        default:
-            break;
-        }
-    }
-    else if (A2M_MOD_DRIV_INFO == frame_type)
-    {
-        switch (param1)
-        {
-        case CMD_MODDRIVINFO_GEAR:
-            return false;
-        default:
-            break;
-        }
-    }
-    return false;
-}
-
-bool drivinfo_module_receive_handler(ptl_frame_payload_t *payload, ptl_proc_buff_t *ackbuff)
-{
-    assert(payload);
-    assert(ackbuff);
-
-    if (A2M_MOD_DRIV_INFO == payload->frame_type)
-    {
-        switch (payload->cmd)
-        {
-        case CMD_MODDRIVINFO_GEAR:
-            // ACK, no thing to do
-            return false;
-        default:
-            break;
-        }
-    }
-    else if (M2A_MOD_DRIV_INFO == payload->frame_type)
-    {
-        switch (payload->cmd)
-        {
-        case CMD_MODDRIVINFO_GEAR:
-            // LOGIC
-            // lt_drivinfo.gear = (carinfo_drivinfo_gear_t)payload->data[0];
-            // lt_drivinfo.driveMode = (carinfo_drivinfo_drivemode_t)payload->data[1];
-            // ACK
-#ifndef CARINFOR_PTL_NO_ACK // no ack
-            uint8_t tmp = 0;
-            tmp = 0x01;
-            ptl_build_frame(A2M_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, &tmp, 1, ackbuff);
-#endif
-            send_message(TASK_ID_IPC_SOCKET, MSG_DEVICE_CAR_INFOR_EVENT, CMD_GET_DRIVINFO_INFO, 0);
-            return true;
-        default:
-            break;
-        }
-    }
-    return false;
+    return lt_carinfo_error.error[0];
 }
 
 #ifdef TASK_MANAGER_STATE_MACHINE_SIF
@@ -606,7 +415,7 @@ void app_car_controller_sif_updating(void)
         lt_sif.current = ((sif_buff[6] & 0xFF));                          // ���� ��λ��1A
         lt_sif.hallCounter = MK_WORD(sif_buff[7], sif_buff[8]);           // 0.5s�����������仯�ĸ���
         lt_sif.soc = ((sif_buff[9] & 0xFF));                              // ����/���� 0-100% 5��ָʾΪ 90,70,50,30,20���ٷֱȣ������Ӧ�ĵ�ѹ����Ϊ 47V��46V,44.5V,43V,41V)��4 ��ָʾΪ 90,70,50,30
-        lt_sif.voltageSystem = ((sif_buff[10] & 0xFF));                   // ��ѹϵͳ  0x01:36V  0x02:48V  0x04:60V  0x08:64V  0x10:72V  0x20:80V  0x40:84V   0x80:96V
+        lt_sif.voltage_system = ((sif_buff[10] & 0xFF));                  // ��ѹϵͳ  0x01:36V  0x02:48V  0x04:60V  0x08:64V  0x10:72V  0x20:80V  0x40:84V   0x80:96V
 
         double rpm = lt_sif.hallCounter * (2.0 * 60 / 100.0);
         double radius = 0.254 / 2.0;                      // ��̥�뾶
@@ -618,7 +427,7 @@ void app_car_controller_sif_updating(void)
 
         lt_meter_current_speed = v * (10.0 * 3600.0 / 1000.0);
 
-        lt_meter.voltageSystem = lt_sif.voltageSystem;
+        lt_meter.voltage_system = lt_sif.voltage_system;
         // lt_meter.soc = lt_sif.soc;
         lt_meter.current = lt_sif.current * 10; // test
 
@@ -626,88 +435,19 @@ void app_car_controller_sif_updating(void)
         {
             // l_t_gear_changed = true;
             LOG_LEVEL("SIF DATA:lt_drivinfo.gear changed\r\n");
-            send_message(TASK_ID_PTL, M2A_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, 0);
+            send_message(TASK_ID_PTL, MCU_TO_SOC_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, 0);
         }
         lt_drivinfo.gear = (carinfo_drivinfo_gear_t)lt_sif.gear;
-        if (lt_meter.speed_real != lt_meter_current_speed)
+        if (lt_meter.actual_speed != lt_meter_current_speed)
         {
             // l_t_speed_changed=true;
-            LOG_LEVEL("SIF DATA:lt_drivinfo.speed_real changed\r\n");
-            send_message(TASK_ID_PTL, M2A_MOD_METER, CMD_MODMETER_RPM_SPEED, 0);
+            LOG_LEVEL("SIF DATA:lt_drivinfo.actual_speed changed\r\n");
+            send_message(TASK_ID_PTL, MCU_TO_SOC_MOD_METER, CMD_MODMETER_RPM_SPEED, 0);
         }
-        lt_meter.speed_real = lt_meter_current_speed;
+        lt_meter.actual_speed = lt_meter_current_speed;
     }
 }
 #endif
-
-void app_car_controller_msg_handler(void)
-{
-#ifdef TASK_MANAGER_STATE_MACHINE_SIF
-    lt_indicator.position = GPIO_PIN_READ_SKD() ? 0 : 1;
-    lt_indicator.highBeam = GPIO_PIN_READ_DDD() ? 0 : 1;
-    lt_indicator.leftTurn = GPIO_PIN_READ_ZZD() ? 0 : 1;
-    lt_indicator.rightTurn = GPIO_PIN_READ_YZD() ? 0 : 1;
-
-    lt_indicator.ready = !lt_sif.bootGuard;
-
-    lt_indicator.ecuFault = lt_sif.controllerFault;
-    lt_indicator.sensorFault = lt_sif.throttleFault;
-    lt_indicator.motorFault = lt_sif.motorFault | lt_sif.hallFault;
-
-    lt_indicator.parking = lt_sif.brake;
-#endif
-#ifdef BATTERY_MANAGER
-    get_battery_voltage();
-#endif
-
-    Msg_t *msg = get_message(TASK_ID_CAR_INFOR);
-    if (msg->id != NO_MSG && (MsgId_t)msg->id == MSG_DEVICE_GPIO_EVENT)
-    {
-        send_message(TASK_ID_PTL, M2A_MOD_INDICATOR, CMD_MODINDICATOR_INDICATOR, 0);
-    }
-
-#if 0
-    if(l_t_speed_changed)
-		{
-			send_message(TASK_ID_PTL, M2A_MOD_METER, CMD_MODMETER_RPM_SPEED, 0);	
-			l_t_speed_changed=false;			
-		}
-		if(l_t_gear_changed)
-		{
-			send_message(TASK_ID_PTL, M2A_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, 0);
-			l_t_gear_changed = false;
-		}
-#endif
-#if 0
-	static uint8_t l_u8_op_step = 0;  // Operational step variable
-    if(GetTickCounter(&l_t_msg_wait_100_timer) >= 300)
-    {
-        switch(l_u8_op_step)
-        {
-        case 0:
-            send_message(TASK_ID_PTL, M2A_MOD_METER, CMD_MODMETER_SOC, 0);
-            break;
-        case 1:
-            send_message(TASK_ID_PTL, M2A_MOD_METER, CMD_MODMETER_RPM_SPEED, 0);		
-            break;
-        case 2:
-            send_message(TASK_ID_PTL, M2A_MOD_DRIV_INFO, CMD_MODDRIVINFO_GEAR, 0);
-            break;
-				case 3:
-            send_message(TASK_ID_PTL, M2A_MOD_INDICATOR, CMD_MODINDICATOR_ERROR_INFO, 0);
-            break;
-        default:
-            l_u8_op_step = (uint8_t)-1;
-            break;
-        }
-				
-        l_u8_op_step++;
-				if(l_u8_op_step >=4)
-					l_u8_op_step = 0;
-        StartTickCounter(&l_t_msg_wait_100_timer);
-    }
-#endif
-}
 
 #ifdef TEST_LOG_DEBUG_SIF
 void log_sif_data(uint8_t *data, uint8_t maxlen)
@@ -718,232 +458,5 @@ void log_sif_data(uint8_t *data, uint8_t maxlen)
         LOG_("0x%02x ", data[i]);
     }
     LOG_("\r\n");
-}
-#endif
-
-#ifdef BATTERY_MANAGER
-void get_battery_voltage(void)
-{
-    if (GetTickCounter(&l_t_soc_timer) < 1000)
-    {
-        return;
-    }
-    StartTickCounter(&l_t_soc_timer);
-    uint8_t cellcount = 4; // Ĭ��4�ŵ��
-    uint16_t vol = 0;      //(uint32_t)SensorAdc_Get_BatVal() * 274 / 1000;
-
-    bool rise = vol > lt_meter.voltage;
-    lt_meter.voltage = vol;
-    uint8_t soc = 100;
-
-    if (rise)
-    {
-        // ���ݿͻ��ĵ�ѹ�������
-        switch (lt_sif.voltageSystem)
-        {
-        case 0x00:
-        case 0x02: // 48V
-        {
-            {
-                if (lt_meter.voltage >= 480)
-                    soc = 100;
-                else if (lt_meter.voltage >= 465)
-                    soc = 80;
-                else if (lt_meter.voltage >= 445)
-                    soc = 40;
-                else if (lt_meter.voltage >= 415)
-                    soc = 20;
-                else
-                    soc = 10;
-            }
-
-            // if(soc < lt_meter.soc)
-            {
-                lt_meter.soc = soc;
-            }
-
-            return;
-        }
-        case 0x04: // 60V
-        {
-            if (lt_meter.voltage >= 600)
-                soc = 100;
-            else if (lt_meter.voltage >= 574)
-                soc = 80;
-            else if (lt_meter.voltage >= 550)
-                soc = 40;
-            else if (lt_meter.voltage >= 526)
-                soc = 20;
-            else
-                soc = 10;
-        }
-
-            // if(soc < lt_meter.soc)
-            {
-                lt_meter.soc = soc;
-            }
-            return;
-        case 0x10: // 72V
-        {
-            if (lt_meter.voltage >= 719)
-                soc = 100;
-            else if (lt_meter.voltage >= 690)
-                soc = 80;
-            else if (lt_meter.voltage >= 660)
-                soc = 40;
-            else if (lt_meter.voltage >= 630)
-                soc = 20;
-            else
-                soc = 10;
-        }
-
-            // if(soc < lt_meter.soc)
-            {
-                lt_meter.soc = soc;
-            }
-            return;
-        }
-    }
-    else
-    {
-        // ���ݿͻ��ĵ�ѹ�������
-        switch (lt_sif.voltageSystem)
-        {
-        case 0x00:
-        case 0x02: // 48V
-        {
-            {
-                if (lt_meter.voltage >= 470)
-                    soc = 100;
-                else if (lt_meter.voltage >= 455)
-                    soc = 80;
-                else if (lt_meter.voltage >= 435)
-                    soc = 40;
-                else if (lt_meter.voltage >= 405)
-                    soc = 20;
-                else
-                    soc = 10;
-            }
-
-            // if(soc < lt_meter.soc)
-            {
-                lt_meter.soc = soc;
-            }
-
-            return;
-        }
-        case 0x04: // 60V
-        {
-            if (lt_meter.voltage >= 590)
-                soc = 100;
-            else if (lt_meter.voltage >= 564)
-                soc = 80;
-            else if (lt_meter.voltage >= 540)
-                soc = 40;
-            else if (lt_meter.voltage >= 516)
-                soc = 20;
-            else
-                soc = 10;
-        }
-
-            // if(soc < lt_meter.soc)
-            {
-                lt_meter.soc = soc;
-            }
-            return;
-        case 0x10: // 72V
-        {
-            if (lt_meter.voltage >= 709)
-                soc = 100;
-            else if (lt_meter.voltage >= 680)
-                soc = 80;
-            else if (lt_meter.voltage >= 650)
-                soc = 40;
-            else if (lt_meter.voltage >= 620)
-                soc = 20;
-            else
-                soc = 10;
-        }
-
-            // if(soc < lt_meter.soc)
-            {
-                lt_meter.soc = soc;
-            }
-            return;
-        }
-    }
-
-    // ͨ�ü���
-    switch (lt_sif.voltageSystem)
-    {
-    case 0x01: // 36V
-        cellcount = 3;
-        break;
-    case 0x02: // 48V
-        cellcount = 4;
-        break;
-    case 0x04: // 60V
-        cellcount = 5;
-        break;
-    case 0x08:         // 64V
-        cellcount = 5; // ��12V��ѹ��أ���ʱ����
-        break;
-    case 0x10: // 72V
-        cellcount = 6;
-        break;
-    case 0x20:         // 80V
-        cellcount = 6; // ��12V��ѹ��أ���ʱ����
-        break;
-    case 0x40: // 84V
-        cellcount = 7;
-        break;
-    case 0x80: // 96V
-        cellcount = 8;
-        break;
-    default:
-        break;
-    }
-
-    if (lt_meter.voltage > (CELL_VOL_90 * cellcount / 10))
-    {
-        soc = 90;
-    }
-    else if (lt_meter.voltage > (CELL_VOL_80 * cellcount / 10))
-    {
-        soc = 80;
-    }
-    else if (lt_meter.voltage > (CELL_VOL_70 * cellcount / 10))
-    {
-        soc = 70;
-    }
-    else if (lt_meter.voltage > (CELL_VOL_60 * cellcount / 10))
-    {
-        soc = 60;
-    }
-    else if (lt_meter.voltage > (CELL_VOL_50 * cellcount / 10))
-    {
-        soc = 50;
-    }
-    else if (lt_meter.voltage > (CELL_VOL_40 * cellcount / 10))
-    {
-        soc = 40;
-    }
-    else if (lt_meter.voltage > (CELL_VOL_30 * cellcount / 10))
-    {
-        soc = 30;
-    }
-    else if (lt_meter.voltage > (CELL_VOL_20 * cellcount / 10))
-    {
-        soc = 20;
-    }
-    else
-    {
-        soc = 0;
-    }
-
-    // if(soc < lt_meter.soc)
-    {
-        lt_meter.soc = soc;
-    }
 }
 #endif

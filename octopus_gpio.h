@@ -27,7 +27,7 @@ extern "C" {
  
 #define GPIO_STATUS_REDUNDANCY                      8       ///< Redundancy level for GPIO status.
 
-#define GPIO_KEY_STATUS_REDUNDANCY                  5       ///< Redundancy level for key status.
+#define GPIO_KEY_STATUS_REDUNDANCY                  3       ///< Redundancy level for key status.
 #define GPIO_KEY_STATUS_MAX_REDUNDANCY              255     ///< Maximum redundancy level for key status.
 
 #define GPIO_KEY_STATUS_PRESS_PERIOD								(GPIO_KEY_STATUS_REDUNDANCY*1)   //100 ms
