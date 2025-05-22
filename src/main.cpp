@@ -85,7 +85,7 @@ int main(int argc, char *argv[])
     initialize_app_client();
     // 准备要传输的数据
     uint8_t group = MSG_GROUP_SET;            // 组 ID
-    uint8_t msg = MSG_IPC_SOCKET_CONFIG_FLAG; // 消息 ID
+    uint8_t msg = MSG_IPC_CMD_CONFIG_FLAG;    // 消息 ID
     int delay = 1000;                         // 延迟时间（毫秒）
 
     // 准备消息数据

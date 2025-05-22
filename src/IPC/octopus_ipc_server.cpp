@@ -401,7 +401,7 @@ int ipc_server_handle_config(int client_fd, const DataMessage &query_msg)
     int cfd = (query_msg.data.empty() || query_msg.data[0] <= 0) ? client_fd : query_msg.data[0];
 
     // If the message is related to IPC socket configuration, update the client status
-    if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_FLAG)
+    if (query_msg.msg_id == MSG_IPC_CMD_CONFIG_FLAG)
     {
         // Update client based on the first data value
         bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
@@ -410,7 +410,7 @@ int ipc_server_handle_config(int client_fd, const DataMessage &query_msg)
         if ((query_msg.data.size() >= 3))
             otsm_update_push_interval_ms(query_msg.data[2] * 10);
     }
-    else if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_PUSH_DELAY)
+    else if (query_msg.msg_id == MSG_IPC_CMD_CONFIG_PUSH_DELAY)
     {
         if (otsm_update_push_interval_ms)
         {
@@ -419,7 +419,7 @@ int ipc_server_handle_config(int client_fd, const DataMessage &query_msg)
             otsm_update_push_interval_ms(time_interval);
         }
     }
-    else if (query_msg.msg_id == MSG_IPC_SOCKET_CONFIG_IP)
+    else if (query_msg.msg_id == MSG_IPC_CMD_CONFIG_IP)
     {
         // Update client based on the first data value
         // bool is_active = ((query_msg.data.size() >= 2) && (query_msg.data[1] > 0));
@@ -503,31 +503,31 @@ int ipc_server_handle_car_infor(int client_fd, const DataMessage &data_message)
 {
     switch (data_message.msg_id)
     {
-    case MSG_CAR_SETTING_SAVE:
+    case MSG_IPC_CMD_CAR_SETTING_SAVE:
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SETTING_SAVE, data_message.data[0], 0);
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SETTING_SAVE, data_message.data[0], 0);
             else
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SETTING_SAVE, 0, 0);
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SETTING_SAVE, 0, 0);
         }
         break;
-    case MSG_CAR_SET_LIGHT:
+    case MSG_IPC_CMD_CAR_SET_LIGHT:
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_LIGHT, data_message.data[0], 0);
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_LIGHT, data_message.data[0], 0);
             else
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_LIGHT, 0, 0);
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_LIGHT, 0, 0);
         }
         break;
-    case MSG_CAR_SET_GEAR_LEVEL:
+    case MSG_IPC_CMD_CAR_SET_GEAR_LEVEL:
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_GEAR_LEVEL, data_message.data[0], 0);
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, data_message.data[0], 0);
             else
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_CAR_SET_GEAR_LEVEL, 0, 0);
+                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, 0, 0);
         }
         break;
     default:
@@ -579,31 +579,31 @@ void ipc_server_notify_carInfor_to_client(int client_fd, int cmd)
 {
     switch (cmd)
     {
-    case MSG_CAR_GET_INDICATOR_INFO:
+    case MSG_IPC_CMD_CAR_GET_INDICATOR_INFO:
     {
         carinfo_indicator_t *carinfo_indicator = otsm_get_indicator_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_indicator, sizeof(carinfo_indicator_t), "handle_car_infor (Indicator)");
         break;
     }
-    case MSG_CAR_GET_METER_INFO:
+    case MSG_IPC_CMD_CAR_GET_METER_INFO:
     {
         carinfo_meter_t *carinfo_meter = otsm_get_meter_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
         break;
     }
-    case MSG_CAR_GET_BATTERY_INFO:
+    case MSG_IPC_CMD_CAR_GET_BATTERY_INFO:
     {
         carinfo_battery_t *carinfo_battery = otsm_get_battery_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_battery, sizeof(carinfo_battery_t), "handle_car_infor (battery)");
         break;
     }
-    case MSG_CAR_GET_ERROR_INFO:
+    case MSG_IPC_CMD_CAR_GET_ERROR_INFO:
     {
         carinfo_error_t *carinfo_error = otsm_get_error_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_error, sizeof(carinfo_error_t), "handle_car_infor (error)");
         break;
     }
-    case MSG_CAR_GET_DRIVINFO_INFO:
+    case MSG_IPC_CMD_CAR_GET_DRIVINFO_INFO:
     {
         carinfo_drivinfo_t *carinfo_drivinfo = otsm_get_drivinfo_info();
         ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_drivinfo, sizeof(carinfo_drivinfo_t), "handle_car_infor (Driver)");
@@ -660,8 +660,8 @@ void ipc_server_initialize_otsm()
     if (!otsm_ipc_doCommand)
     {
         std::cerr << "Server Failed to find otsm_ipc_doCommand: " << dlerror() << std::endl;
-        //dlclose(handle);
-        //return;
+        // dlclose(handle);
+        // return;
     }
 
     otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
