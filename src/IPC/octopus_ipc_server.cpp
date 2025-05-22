@@ -97,6 +97,9 @@ int socket_fd_server = -1;
 std::unordered_set<ClientInfo> active_clients;
 
 bool ipc_server_socket_debug_print_data = false;
+
+// Initialize the global thread pool object
+// OctopusThreadPool g_threadPool(4, 100, TaskOverflowStrategy::DropOldest);
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -244,12 +247,27 @@ void ipc_server_remove_old_socket_bind_file()
 void ipc_server_CarInforNotify_Callback(int cmd_parameter)
 {
     // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
+    if (active_clients.empty())
+    {
+        std::cout << "[INFO] No clients to notify for cmd_parameter = " << cmd_parameter << std::endl;
+        return;
+    }
     for (const auto &client : active_clients)
     {
         /// std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
         /// threads.push_back(std::move(notify_thread));
         if (client.flag) // need push callback
-            ipc_server_notify_carInfor_to_client(client.fd, cmd_parameter);
+        {
+            try
+            {
+                ipc_server_notify_carInfor_to_client(client.fd, cmd_parameter);
+            }
+            catch (const std::exception &ex)
+            {
+                std::cerr << "[ERROR] Notify failed for client.fd=" << client.fd
+                          << ": " << ex.what() << std::endl;
+            }
+        }
     }
 }
 
@@ -542,7 +560,7 @@ void ipc_server_send_car_info_to_client(int client_fd, int msg, T *car_info, siz
 {
     if (car_info == nullptr)
     {
-        std::cerr << "Server Error: " << info_type << " returned nullptr!" << std::endl;
+        std::cout << "Server Error: " << info_type << " returned nullptr!" << std::endl;
         return;
     }
 
@@ -581,32 +599,67 @@ void ipc_server_notify_carInfor_to_client(int client_fd, int cmd)
     {
     case MSG_IPC_CMD_CAR_GET_INDICATOR_INFO:
     {
-        carinfo_indicator_t *carinfo_indicator = otsm_get_indicator_info();
-        ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_indicator, sizeof(carinfo_indicator_t), "handle_car_infor (Indicator)");
+        if (otsm_get_indicator_info)
+        {
+            carinfo_indicator_t *carinfo_indicator = otsm_get_indicator_info();
+            ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_indicator, sizeof(carinfo_indicator_t), "handle_car_infor (Indicator)");
+        }
+        else
+        {
+            std::cout << "Server Error: otsm_get_indicator_info nullptr!" << std::endl;
+        }
         break;
     }
     case MSG_IPC_CMD_CAR_GET_METER_INFO:
     {
-        carinfo_meter_t *carinfo_meter = otsm_get_meter_info();
-        ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
+        if (otsm_get_meter_info)
+        {
+            carinfo_meter_t *carinfo_meter = otsm_get_meter_info();
+            ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_meter, sizeof(carinfo_meter_t), "handle_car_infor (Meter)");
+        }
+        else
+        {
+            std::cout << "Server Error: otsm_get_meter_info nullptr!" << std::endl;
+        }
         break;
     }
     case MSG_IPC_CMD_CAR_GET_BATTERY_INFO:
     {
-        carinfo_battery_t *carinfo_battery = otsm_get_battery_info();
-        ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_battery, sizeof(carinfo_battery_t), "handle_car_infor (battery)");
+        if (otsm_get_battery_info)
+        {
+            carinfo_battery_t *carinfo_battery = otsm_get_battery_info();
+            ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_battery, sizeof(carinfo_battery_t), "handle_car_infor (battery)");
+        }
+        else
+        {
+            std::cout << "Server Error: otsm_get_battery_info nullptr!" << std::endl;
+        }
         break;
     }
     case MSG_IPC_CMD_CAR_GET_ERROR_INFO:
     {
-        carinfo_error_t *carinfo_error = otsm_get_error_info();
-        ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_error, sizeof(carinfo_error_t), "handle_car_infor (error)");
+        if (otsm_get_error_info)
+        {
+            carinfo_error_t *carinfo_error = otsm_get_error_info();
+            ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_error, sizeof(carinfo_error_t), "handle_car_infor (error)");
+        }
+        else
+        {
+            std::cout << "Server Error: otsm_get_error_info nullptr!" << std::endl;
+        }
         break;
     }
     case MSG_IPC_CMD_CAR_GET_DRIVINFO_INFO:
     {
-        carinfo_drivinfo_t *carinfo_drivinfo = otsm_get_drivinfo_info();
-        ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_drivinfo, sizeof(carinfo_drivinfo_t), "handle_car_infor (Driver)");
+        if (otsm_get_drivinfo_info)
+        {
+            carinfo_drivinfo_t *carinfo_drivinfo = otsm_get_drivinfo_info();
+            ipc_server_send_car_info_to_client(client_fd, cmd, carinfo_drivinfo, sizeof(carinfo_drivinfo_t), "handle_car_infor (Driver)");
+        }
+        else
+        {
+            std::cout << "Server Error: otsm_get_drivinfo_info nullptr!" << std::endl;
+        }
         break;
     }
     default:
@@ -773,9 +826,8 @@ int main()
     LOG_CC("Octopus IPC Socket Server Started Successfully.");
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     ipc_server_initialize_otsm();
-    std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
+    /// std::this_thread::sleep_for(std::chrono::seconds(1)); // Wait before reconnecting
     ipc_server_initialize_server();
-
     ////////////////////////////////////////////////////////////////////////////////////////////////////
     // Main loop to accept and handle client connections
     while (true)

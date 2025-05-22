@@ -91,7 +91,7 @@ bool ipc_is_socket_server_process_running(const std::string &process_name)
 {
     if (process_name.empty())
     {
-        std::cout << "Client: process_name is empty, invalid check." << std::endl;
+        std::cout << "Client: process_name is empty, invalid process name." << std::endl;
         return false;
     }
     // Open a pipe to run the "ps aux" command which lists all running processes.
@@ -564,7 +564,7 @@ __attribute__((constructor)) void ipc_client_main()
 
     // Initialize the thread pool for handling asynchronous tasks in the background
     ipc_init_threadpool();
-    std::cout << "Client: IPC Client Main Start Init...\n";
+    std::cout << "Client: IPC Client Main Start Initializing...\n";
 #ifdef OCTOPUS_MESSAGE_BUS
     // Start the message bus dispatcher in a separate thread
     if (g_message_bus)
