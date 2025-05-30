@@ -41,14 +41,10 @@
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 typedef void (*CarInforCallback_t)(int cmd);
-
 typedef void (*T_otsm_SendMessageFunc)(uint16_t task_module, uint16_t id, uint16_t param1, uint16_t param2);
-
 typedef void (*T_otsm_RegistCallbackFunc)(CarInforCallback_t callback);
 typedef void (*T_otsm_StopRunningFunc)();
-
 typedef void (*T_otsm_update_push_interval_msFunc)(uint16_t delay_ms);
-typedef void (*T_otsm_ipc_doCommandFunc)(uint8_t *data, uint8_t length);
 
 typedef carinfo_meter_t *(*T_otsm_get_meter_info)();
 typedef carinfo_indicator_t *(*T_otsm_get_indicator_info)();
@@ -59,7 +55,6 @@ typedef carinfo_drivinfo_t *(*T_otsm_get_drivinfo_info)();
 T_otsm_RegistCallbackFunc otsm_RegistCallback = NULL;
 T_otsm_StopRunningFunc otsm_StopRunning = NULL;
 T_otsm_update_push_interval_msFunc otsm_update_push_interval_ms = NULL;
-T_otsm_ipc_doCommandFunc otsm_ipc_doCommand = NULL;
 
 T_otsm_get_meter_info otsm_get_meter_info = NULL;
 T_otsm_get_indicator_info otsm_get_indicator_info = NULL;
@@ -371,7 +366,7 @@ void ipc_server_handle_client(int client_fd)
         }
 
         // Log success after handling the message
-        std::cout << "Server handling client [" << client_fd << "] "
+        std::cout << "Server handling [Client: " << client_fd << "] "
                   << "[Group: " << static_cast<int>(data_message.msg_group) << "] "
                   << "[Msg: " << static_cast<int>(data_message.msg_id) << "] done." << std::endl;
     }
@@ -525,27 +520,27 @@ int ipc_server_handle_car_infor(int client_fd, const DataMessage &data_message)
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SETTING_SAVE, data_message.data[0], 0);
+                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_IPC_CMD_CAR_SETTING_SAVE, data_message.data[0], 0);
             else
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SETTING_SAVE, 0, 0);
+                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_IPC_CMD_CAR_SETTING_SAVE, 0, 0);
         }
         break;
     case MSG_IPC_CMD_CAR_SET_LIGHT:
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_LIGHT, data_message.data[0], 0);
+                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_LIGHT, data_message.data[0], 0);
             else
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_LIGHT, 0, 0);
+                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_LIGHT, 0, 0);
         }
         break;
     case MSG_IPC_CMD_CAR_SET_GEAR_LEVEL:
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, data_message.data[0], 0);
+                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, data_message.data[0], 0);
             else
-                otsm_SendMessage(TASK_ID_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, 0, 0);
+                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, 0, 0);
         }
         break;
     default:
@@ -709,15 +704,7 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    otsm_ipc_doCommand = (T_otsm_ipc_doCommandFunc)dlsym(handle, "otsm_do_ipc_Command");
-    if (!otsm_ipc_doCommand)
-    {
-        std::cerr << "Server Failed to find otsm_ipc_doCommand: " << dlerror() << std::endl;
-        // dlclose(handle);
-        // return;
-    }
-
-    otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "app_carinfo_get_meter_info");
+    otsm_get_meter_info = (carinfo_meter_t * (*)()) dlsym(handle, "task_carinfo_get_meter_info");
     if (!otsm_get_meter_info)
     {
         std::cerr << "Server Failed to find otsm_get_meter_info: " << dlerror() << std::endl;
@@ -725,7 +712,7 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    otsm_get_indicator_info = (carinfo_indicator_t * (*)()) dlsym(handle, "app_carinfo_get_indicator_info");
+    otsm_get_indicator_info = (carinfo_indicator_t * (*)()) dlsym(handle, "task_carinfo_get_indicator_info");
     if (!otsm_get_indicator_info)
     {
         std::cerr << "Server Failed to find otsm_get_indicator_info: " << dlerror() << std::endl;
@@ -733,7 +720,7 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    otsm_get_battery_info = (carinfo_battery_t * (*)()) dlsym(handle, "app_carinfo_get_battery_info");
+    otsm_get_battery_info = (carinfo_battery_t * (*)()) dlsym(handle, "task_carinfo_get_battery_info");
     if (!otsm_get_battery_info)
     {
         std::cerr << "Server Failed to find otsm_get_battery_info: " << dlerror() << std::endl;
@@ -741,7 +728,7 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    otsm_get_error_info = (carinfo_error_t * (*)()) dlsym(handle, "app_carinfo_get_error_info");
+    otsm_get_error_info = (carinfo_error_t * (*)()) dlsym(handle, "task_carinfo_get_error_info");
     if (!otsm_get_error_info)
     {
         std::cerr << "Server Failed to find otsm_get_error_info: " << dlerror() << std::endl;
@@ -750,7 +737,7 @@ void ipc_server_initialize_otsm()
     }
 
     // otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
-    otsm_get_drivinfo_info = (T_otsm_get_drivinfo_info)dlsym(handle, "app_carinfo_get_drivinfo_info");
+    otsm_get_drivinfo_info = (T_otsm_get_drivinfo_info)dlsym(handle, "task_carinfo_get_drivinfo_info");
     if (!otsm_get_drivinfo_info)
     {
         std::cerr << "Server Failed to find otsm_get_drivinfo_info: " << dlerror() << std::endl;

@@ -805,7 +805,7 @@ void ipc_send_message_queue_delayed(DataMessage &message, int delay_ms)
                                          std::cout << "Client: Message sent successfully after waiting " << waited_ms << " delay " << delay_ms << " ms for socket to be ready.\n";
                                      }
 
-                                     copied_msg.printMessage("Client");
+                                     copied_msg.printMessage("ipc_send_message_queue_delayed client");
                                      // At this point, socket is valid; serialize and send the message
                                      std::vector<uint8_t> serialized_data = copied_msg.serializeMessage();
                                      client.send_query(socket_client.load(), serialized_data); },
