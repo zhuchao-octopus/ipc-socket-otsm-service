@@ -34,11 +34,13 @@ void signal_handler(int signum)
     std::cout << "Client: Interrupt signal received. Cleaning up...\n";
     exit(signum);
 }
+
 // 负责信号处理的函数
 void setup_signal_handlers()
 {
     signal(SIGINT, signal_handler);
 }
+
 DataMessage parse_arguments(int argc, char *argv[], std::vector<std::string> &original_args)
 {
     DataMessage data_msg;
