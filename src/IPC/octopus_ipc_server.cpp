@@ -479,7 +479,7 @@ int ipc_server_handle_config_event(int client_fd, const DataMessage &query_msg)
 
 int ipc_server_handle_mcu_event(int client_fd, const DataMessage &query_msg)
 {
-    if (query_msg.msg_id == MSG_IPC_CMD_MCU_REQUEST_UPGRADING)
+    if (query_msg.msg_id == MSG_IPC_CMD_MCU_REQUEST_UPGRADING) //This task needs to be handled by OTSM
     {
         if (otsm_SendMessage)
         {
@@ -488,11 +488,7 @@ int ipc_server_handle_mcu_event(int client_fd, const DataMessage &query_msg)
     }
     else if (query_msg.msg_id == MSG_IPC_CMD_MCU_VERSION)
     {
-        if (otsm_get_mcu_flash_meta_infor)
-        {
-            flash_meta_infor_t *flash_meta_infor = otsm_get_mcu_flash_meta_infor();
-            ipc_server_send_message_to_client(client_fd, query_msg.msg_group, query_msg.msg_id, flash_meta_infor, sizeof(flash_meta_infor_t), "handle_mcu_flash_mata_infor (Meta)");
-        }
+        ipc_server_notify_mcu_infor_to_client(client_fd,query_msg.msg_group, query_msg.msg_id);
     }
     return 0;
 }
