@@ -483,7 +483,7 @@ int ipc_server_handle_mcu_event(int client_fd, const DataMessage &query_msg)
     {
         if (otsm_SendMessage)
         {
-            otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_OTSM_DEVICE_MCU_EVENT, MSG_OTSM_CMD_MCU_REQUEST_UPGRADING, 0);
+            otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_MCU_EVENT, MSG_OTSM_CMD_MCU_REQUEST_UPGRADING, 0);
         }
     }
     else if (query_msg.msg_id == MSG_IPC_CMD_MCU_VERSION)
@@ -557,27 +557,27 @@ int ipc_server_handle_car_event(int client_fd, const DataMessage &data_message)
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SETTING_SAVE, data_message.data[0]);
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SETTING_SAVE, data_message.data[0]);
             else
-                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SETTING_SAVE, 0);
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SETTING_SAVE, 0);
         }
         break;
     case MSG_IPC_CMD_CAR_SET_LIGHT:
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_LIGHT, data_message.data[0]);
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_LIGHT, data_message.data[0]);
             else
-                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_LIGHT, 0);
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_LIGHT, 0);
         }
         break;
     case MSG_IPC_CMD_CAR_SET_GEAR_LEVEL:
         if (otsm_SendMessage)
         {
             if (data_message.data.size() >= 1)
-                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, data_message.data[0]);
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, data_message.data[0]);
             else
-                otsm_SendMessage(TASK_MODULE_IPC_SOCKET, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, 0);
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, 0);
         }
         break;
     default:
