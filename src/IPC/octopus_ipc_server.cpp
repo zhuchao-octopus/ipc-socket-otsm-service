@@ -51,7 +51,7 @@ typedef carinfo_meter_t *(*T_otsm_get_meter_info)();
 typedef carinfo_indicator_t *(*T_otsm_get_indicator_info)();
 typedef carinfo_battery_t *(*T_otsm_get_battery_info)();
 typedef carinfo_error_t *(*T_otsm_get_error_info)();
-typedef carinfo_drivinfo_t *(*T_otsm_get_drivinfo_info)();
+// typedef carinfo_drivinfo_t *(*T_otsm_get_drivinfo_info)();
 
 typedef flash_meta_infor_t *(*T_otsm_flash_get_meta_infor)();
 typedef mcu_update_progress_t (*T_otsm_get_mcu_upgrade_progress_info)();
@@ -64,7 +64,7 @@ T_otsm_get_meter_info otsm_get_meter_info = NULL;
 T_otsm_get_indicator_info otsm_get_indicator_info = NULL;
 T_otsm_get_battery_info otsm_get_battery_info = NULL;
 T_otsm_get_error_info otsm_get_error_info = NULL;
-T_otsm_get_drivinfo_info otsm_get_drivinfo_info = NULL;
+// T_otsm_get_drivinfo_info otsm_get_drivinfo_info = NULL;
 
 T_otsm_SendMessageFunc otsm_SendMessage = NULL;
 T_otsm_flash_get_meta_infor otsm_get_mcu_flash_meta_infor = NULL;
@@ -479,7 +479,7 @@ int ipc_server_handle_config_event(int client_fd, const DataMessage &query_msg)
 
 int ipc_server_handle_mcu_event(int client_fd, const DataMessage &query_msg)
 {
-    if (query_msg.msg_id == MSG_IPC_CMD_MCU_REQUEST_UPGRADING) //This task needs to be handled by OTSM
+    if (query_msg.msg_id == MSG_IPC_CMD_MCU_REQUEST_UPGRADING) // This task needs to be handled by OTSM
     {
         if (otsm_SendMessage)
         {
@@ -488,7 +488,7 @@ int ipc_server_handle_mcu_event(int client_fd, const DataMessage &query_msg)
     }
     else if (query_msg.msg_id == MSG_IPC_CMD_MCU_VERSION)
     {
-        ipc_server_notify_mcu_infor_to_client(client_fd,query_msg.msg_group, query_msg.msg_id);
+        ipc_server_notify_mcu_infor_to_client(client_fd, query_msg.msg_group, query_msg.msg_id);
     }
     return 0;
 }
@@ -562,6 +562,7 @@ int ipc_server_handle_car_event(int client_fd, const DataMessage &data_message)
                 otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SETTING_SAVE, 0);
         }
         break;
+
     case MSG_IPC_CMD_CAR_SET_LIGHT:
         if (otsm_SendMessage)
         {
@@ -571,6 +572,7 @@ int ipc_server_handle_car_event(int client_fd, const DataMessage &data_message)
                 otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_LIGHT, 0);
         }
         break;
+
     case MSG_IPC_CMD_CAR_SET_GEAR_LEVEL:
         if (otsm_SendMessage)
         {
@@ -580,6 +582,50 @@ int ipc_server_handle_car_event(int client_fd, const DataMessage &data_message)
                 otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, MSG_IPC_CMD_CAR_SET_GEAR_LEVEL, 0);
         }
         break;
+
+    case MSG_IPC_CMD_CAR_METER_TRIP_DISTANCE_CLEAR:
+    case MSG_IPC_CMD_CAR_METER_TIME_CLEAR:
+    case MSG_IPC_CMD_CAR_METER_ODO_CLEAR:
+        if (otsm_SendMessage)
+        {
+            if (data_message.data.size() >= 1)
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, data_message.msg_id, data_message.data[0]);
+            else
+                otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, data_message.msg_id, 0);
+        }
+        break;
+
+    case MSG_IPC_CMD_CAR_SET_INDICATOR:
+        if (data_message.data.size() >= sizeof(carinfo_indicator_t))
+        {
+            carinfo_indicator_t *carinfo_indicator = otsm_get_indicator_info();
+            std::memcpy(carinfo_indicator, data_message.data.data(), sizeof(carinfo_indicator_t));
+            // otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, data_message.msg_id, 0);
+            otsm_SendMessage(TASK_MODULE_PTL_1, SOC_TO_MCU_MOD_IPC, FRAME_CMD_CAR_SET_INDICATOR, 0);
+        }
+        break;
+
+    case MSG_IPC_CMD_CAR_SET_METER:
+        if (data_message.data.size() >= sizeof(carinfo_meter_t))
+        {
+            carinfo_meter_t *carinfo_meter = otsm_get_meter_info();
+            // memcpy(carinfo_meter, &data_message.data, sizeof(carinfo_meter_t));
+            std::memcpy(carinfo_meter, data_message.data.data(), sizeof(carinfo_meter_t));
+            otsm_SendMessage(TASK_MODULE_PTL_1, SOC_TO_MCU_MOD_IPC, FRAME_CMD_CAR_SET_METER, 0);
+        }
+        break;
+
+    case MSG_IPC_CMD_CAR_SET_BATTERY:
+        if (data_message.data.size() >= sizeof(carinfo_battery_t))
+        {
+            carinfo_battery_t *carinfo_battery = otsm_get_battery_info();
+            // memcpy(carinfo_battery, &data_message.data, sizeof(carinfo_battery_t));
+            std::memcpy(carinfo_battery, data_message.data.data(), sizeof(carinfo_battery_t));
+            //  otsm_SendMessage(TASK_MODULE_IPC, MSG_OTSM_DEVICE_CAR_EVENT, data_message.msg_id, 0);
+            otsm_SendMessage(TASK_MODULE_PTL_1, SOC_TO_MCU_MOD_IPC, FRAME_CMD_CAR_SET_BATTERY, 0);
+        }
+        break;
+
     default:
         ipc_server_notify_car_infor_to_client(client_fd, MSG_GROUP_CAR, data_message.msg_id);
     }
@@ -644,6 +690,8 @@ void ipc_server_notify_car_infor_to_client(int client_fd, int msg_grp, int msg_i
         }
         break;
     }
+
+#if 0
     case MSG_IPC_CMD_CAR_GET_DRIVINFO_INFO:
     {
         if (otsm_get_drivinfo_info)
@@ -657,6 +705,8 @@ void ipc_server_notify_car_infor_to_client(int client_fd, int msg_grp, int msg_i
         }
         break;
     }
+#endif
+
     case MSG_OTSM_CMD_MCU_UPDATING:
     {
         break;
@@ -807,7 +857,8 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    // otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
+#if 0
+    otsm_get_drivinfo_info = (carinfo_drivinfo_t * (*)()) dlsym(handle, "app_carinfo_get_drivinfo_info");
     otsm_get_drivinfo_info = (T_otsm_get_drivinfo_info)dlsym(handle, "task_carinfo_get_drivinfo_info");
     if (!otsm_get_drivinfo_info)
     {
@@ -815,6 +866,7 @@ void ipc_server_initialize_otsm()
         dlclose(handle);
         return;
     }
+#endif
 
     otsm_SendMessage = (T_otsm_SendMessageFunc)dlsym(handle, "send_message_adapter");
     if (!otsm_SendMessage)
