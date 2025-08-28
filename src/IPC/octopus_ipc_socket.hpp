@@ -142,7 +142,7 @@ public:
     int send_response(int socket_fd, std::vector<int> &resp_vector);
 
     // Sends a response (buffer) to the client over the specified socket.
-    int send_buff(int socket_fd, char *resp_buffer, int length);
+    int send_buff(int socket_fd, uint8_t *resp_buffer, int length);
 
     // Retrieves a query from the client over the specified socket.
     QueryResult get_query(int socket_fd);

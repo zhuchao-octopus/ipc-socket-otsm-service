@@ -354,7 +354,7 @@ int Socket::send_response(int socket_fd, std::vector<int> &resp_vector)
     return 0;
 }
 // Send a response to the client
-int Socket::send_buff(int socket_fd, char *resp_buffer, int length)
+int Socket::send_buff(int socket_fd, uint8_t *resp_buffer, int length)
 {
     int total_sent = 0;
     while (total_sent < length)

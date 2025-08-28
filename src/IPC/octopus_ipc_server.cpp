@@ -36,14 +36,14 @@
 #include "octopus_logger.hpp"
 #include "octopus_ipc_socket.hpp"
 #include "octopus_ipc_ptl.hpp"
-#include "../OTSM/octopus_carinfor.h"
+#include "../OTSM/octopus_vehicle.h"
 #include "../OTSM/octopus_task_manager.h"
 #include "../OTSM/octopus_flash.h"
 #include "../OTSM/octopus_update_mcu.h"
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-typedef void (*CarInforCallback_t)(uint16_t param1, uint16_t param2);
+typedef void (*T_otsm_MessageDataCallbackFunc)(uint16_t param1, uint16_t param2, const uint8_t *data, uint16_t length);
 typedef void (*T_otsm_SendMessageFunc)(uint16_t task_module, uint16_t id, uint16_t param1, uint16_t param2);
-typedef void (*T_otsm_RegistCallbackFunc)(CarInforCallback_t callback);
+typedef void (*T_otsm_RegisterMsgCallbackFunc)(T_otsm_MessageDataCallbackFunc callback);
 typedef void (*T_otsm_StopRunningFunc)();
 typedef void (*T_otsm_update_push_interval_msFunc)(uint16_t delay_ms);
 
@@ -56,7 +56,7 @@ typedef carinfo_error_t *(*T_otsm_get_error_info)();
 typedef flash_meta_infor_t *(*T_otsm_flash_get_meta_infor)();
 typedef mcu_update_progress_t (*T_otsm_get_mcu_upgrade_progress_info)();
 
-T_otsm_RegistCallbackFunc otsm_RegistCallback = NULL;
+T_otsm_RegisterMsgCallbackFunc otsm_RegisterMessageCallback = NULL;
 T_otsm_StopRunningFunc otsm_StopRunning = NULL;
 T_otsm_update_push_interval_msFunc otsm_update_push_interval_ms = NULL;
 
@@ -73,13 +73,11 @@ T_otsm_get_mcu_upgrade_progress_info otsm_get_mcu_upgrade_progress_info = NULL;
 // Function to handle client communication
 template <typename T>
 void ipc_server_send_message_to_client(int client_fd, int msg_grp, int msg_id, T *t_info, size_t size, const std::string &info_type);
-
-void ipc_server_car_infor_notify_callback(uint16_t msg_grp, uint16_t msg_id);
-
-void ipc_server_notify_car_infor_to_client(int client_fd, int msg_grp, int msg_id);
-void ipc_server_notify_mcu_infor_to_client(int client_fd, int msg_grp, int msg_id);
-
+void ipc_server_message_data_callback(uint16_t msg_grp, uint16_t msg_id, const uint8_t *data, uint16_t length);
+void ipc_server_notify_car_infor_to_client(int client_fd, int msg_grp, int msg_id, const uint8_t *data, uint16_t length);
+void ipc_server_notify_mcu_infor_to_client(int client_fd, int msg_grp, int msg_id, const uint8_t *data, uint16_t length);
 void ipc_server_handle_client_event(int client_fd);
+
 int ipc_server_handle_calculation_event(int client_fd, const DataMessage &query_msg);
 int ipc_server_handle_help_event(int client_fd, const DataMessage &query_msg);
 int ipc_server_handle_config_event(int client_fd, const DataMessage &query_msg);
@@ -245,7 +243,7 @@ void ipc_server_remove_old_socket_bind_file()
     unlink(socket_path);
 }
 
-void ipc_server_car_infor_notify_callback(uint16_t msg_grp, uint16_t msg_id)
+void ipc_server_message_data_callback(uint16_t msg_grp, uint16_t msg_id, const uint8_t *data, uint16_t length)
 {
     // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
     if (active_clients.empty())
@@ -253,6 +251,7 @@ void ipc_server_car_infor_notify_callback(uint16_t msg_grp, uint16_t msg_id)
         std::cout << "[INFO] No clients to notify for cmd_parameter = " << msg_id << std::endl;
         return;
     }
+
     for (const auto &client : active_clients)
     {
         /// std::thread notify_thread(notify_carInfor_to_client, client_id, cmd_parameter);
@@ -264,10 +263,10 @@ void ipc_server_car_infor_notify_callback(uint16_t msg_grp, uint16_t msg_id)
                 switch (msg_grp)
                 {
                 case MSG_GROUP_CAR:
-                    ipc_server_notify_car_infor_to_client(client.fd, msg_grp, msg_id);
+                    ipc_server_notify_car_infor_to_client(client.fd, msg_grp, msg_id, data, length);
                     break;
                 case MSG_GROUP_MCU:
-                    ipc_server_notify_mcu_infor_to_client(client.fd, msg_grp, msg_id);
+                    ipc_server_notify_mcu_infor_to_client(client.fd, msg_grp, msg_id, data, length);
                     break;
                 default:
                     break;
@@ -488,7 +487,7 @@ int ipc_server_handle_mcu_event(int client_fd, const DataMessage &query_msg)
     }
     else if (query_msg.msg_id == MSG_IPC_CMD_MCU_VERSION)
     {
-        ipc_server_notify_mcu_infor_to_client(client_fd, query_msg.msg_group, query_msg.msg_id);
+        ipc_server_notify_mcu_infor_to_client(client_fd, query_msg.msg_group, query_msg.msg_id, NULL, 0);
     }
     return 0;
 }
@@ -627,14 +626,14 @@ int ipc_server_handle_car_event(int client_fd, const DataMessage &data_message)
         break;
 
     default:
-        ipc_server_notify_car_infor_to_client(client_fd, MSG_GROUP_CAR, data_message.msg_id);
+        ipc_server_notify_car_infor_to_client(client_fd, MSG_GROUP_CAR, data_message.msg_id, NULL, 0);
     }
 
     return 0;
 }
 
 // Main function to notify car info to the client
-void ipc_server_notify_car_infor_to_client(int client_fd, int msg_grp, int msg_id)
+void ipc_server_notify_car_infor_to_client(int client_fd, int msg_grp, int msg_id, const uint8_t *data, uint16_t length)
 {
     switch (msg_id)
     {
@@ -718,12 +717,11 @@ void ipc_server_notify_car_infor_to_client(int client_fd, int msg_grp, int msg_i
     }
 }
 
-void ipc_server_notify_mcu_infor_to_client(int client_fd, int msg_grp, int msg_id)
+void ipc_server_notify_mcu_infor_to_client(int client_fd, int msg_grp, int msg_id, const uint8_t *data, uint16_t length)
 {
     switch (msg_id)
     {
     case MSG_IPC_CMD_MCU_UPDATING:
-    {
         if (otsm_get_mcu_upgrade_progress_info)
         {
             mcu_update_progress_t mcu_update_progress = otsm_get_mcu_upgrade_progress_info();
@@ -734,7 +732,6 @@ void ipc_server_notify_mcu_infor_to_client(int client_fd, int msg_grp, int msg_i
             LOG_INFO("otsm_get_mcu_upgrade_progress_info function is null!");
         }
         break;
-    }
 
     case MSG_IPC_CMD_MCU_VERSION:
         if (otsm_get_mcu_flash_meta_infor)
@@ -744,6 +741,12 @@ void ipc_server_notify_mcu_infor_to_client(int client_fd, int msg_grp, int msg_i
         }
 
         break;
+    case MSG_IPC_CMD_KEY_EVENT:
+    case MSG_IPC_CMD_KEY_DOWN_EVENT:
+    case MSG_IPC_CMD_KEY_UP_EVENT:
+        ipc_server_send_message_to_client(client_fd, msg_grp, msg_id, data, length, "handle_mcu_key_infor (Key)");
+        break;
+
     default:
         break;
     }
@@ -766,13 +769,13 @@ void ipc_server_send_message_to_client(int client_fd, int msg_grp, int msg_id, T
 
     // Directly copy the car info data into the msg.data vector
     data_msg.data.clear(); // Clear any existing data
-    data_msg.data.insert(data_msg.data.end(), reinterpret_cast<uint8_t *>(t_info), reinterpret_cast<uint8_t *>(t_info) + size);
+    data_msg.data.insert(data_msg.data.end(), reinterpret_cast<const uint8_t *>(t_info), reinterpret_cast<const uint8_t *>(t_info) + size);
     data_msg.msg_length = data_msg.data.size();
 
     // Serialize the DataMessage into the protocol format
     std::vector<uint8_t> serialized_data = data_msg.serializeMessage();
     size_t data_size = serialized_data.size();
-    char *buffer = reinterpret_cast<char *>(serialized_data.data());
+    uint8_t *buffer = reinterpret_cast<uint8_t *>(serialized_data.data());
 
     if (ipc_server_socket_debug_print_data)
     {
@@ -799,12 +802,12 @@ void ipc_server_initialize_otsm()
         return;
     }
     /// std::cout << "Server sucecess to load otsm library: " << dlerror() << std::endl;
-    ///  你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
-    ///  例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
-    otsm_RegistCallback = (T_otsm_RegistCallbackFunc)dlsym(handle, "register_car_infor_callback");
-    if (!otsm_RegistCallback)
+    /// 你可以在这里调用 OTSM 库中的函数，假设它有一个初始化函数 `initialize`。
+    /// 例如，假设 OTSM 库有一个 C 风格的 `initialize` 函数
+    otsm_RegisterMessageCallback = (T_otsm_RegisterMsgCallbackFunc)dlsym(handle, "register_message_data_callback");
+    if (!otsm_RegisterMessageCallback)
     {
-        std::cerr << "Server Failed to find otsm_RegistCallback: " << dlerror() << std::endl;
+        std::cerr << "Server Failed to find otsm_RegisterMessageCallback: " << dlerror() << std::endl;
         dlclose(handle);
         return;
     }
@@ -892,7 +895,7 @@ void ipc_server_initialize_otsm()
         return;
     }
 
-    otsm_RegistCallback(ipc_server_car_infor_notify_callback);
+    otsm_RegisterMessageCallback(ipc_server_message_data_callback);
     /// 调用库中的初始化函数
     /// initialize_func();
 }
