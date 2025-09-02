@@ -36,10 +36,13 @@
 #include "octopus_logger.hpp"
 #include "octopus_ipc_socket.hpp"
 #include "octopus_ipc_ptl.hpp"
+
 #include "../OTSM/octopus_vehicle.h"
 #include "../OTSM/octopus_task_manager.h"
 #include "../OTSM/octopus_flash.h"
 #include "../OTSM/octopus_update_mcu.h"
+#include "../OTSM/octopus_uart_ptl.h"
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 typedef void (*T_otsm_MessageDataCallbackFunc)(uint16_t param1, uint16_t param2, const uint8_t *data, uint16_t length);
 typedef void (*T_otsm_SendMessageFunc)(uint16_t task_module, uint16_t id, uint16_t param1, uint16_t param2);

@@ -1,8 +1,9 @@
-#ifndef OCTOPUS_SERIALPORT_C_H
-#define OCTOPUS_SERIALPORT_C_H
+#ifndef __OCTOPUS_SERIALPORT_C_H__
+#define __OCTOPUS_SERIALPORT_C_H__
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h> /**< Boolean type definitions (true/false) */
 
 #ifdef __cplusplus
 extern "C"
