@@ -23,10 +23,8 @@
 std::unordered_map<std::string, int> operations = {
     {"help", MSG_GROUP_0},
     {"set", MSG_GROUP_SET},
-    {"subtract", 2},
-    {"multiply", 3},
-    {"divide", 4},
-    {"car", MSG_GROUP_CAR}};
+    {"car", MSG_GROUP_CAR},
+    {"mcu", MSG_GROUP_MCU}};
 
 // Signal handler for clean-up on interrupt (e.g., Ctrl+C)
 void signal_handler(int signum)

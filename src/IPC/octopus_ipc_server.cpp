@@ -251,7 +251,7 @@ void ipc_server_message_data_callback(uint16_t msg_grp, uint16_t msg_id, const u
     // std::cout << "Server handling otsm message cmd_parameter=" << cmd_parameter << std::endl;
     if (active_clients.empty())
     {
-        std::cout << "[INFO] No clients to notify for cmd_parameter = " << msg_id << std::endl;
+        // std::cout << "[INFO] No clients to notify for cmd_parameter = " << msg_id << std::endl;
         return;
     }
 
